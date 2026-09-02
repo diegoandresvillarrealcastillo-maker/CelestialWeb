@@ -2,6 +2,32 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { hashPassword, verifyPassword } from '../server/security/passwords.js';
 import { PostgresProductService } from '../server/services/product-service.js';
+import { hashIdentifier, hashToken, safeTokenMatch } from '../server/security/tokens.js';
+
+describe('token matching', () => {
+  it('accepts a raw token that matches its own hash', () => {
+    const raw = 'session-token-abc123';
+    expect(safeTokenMatch(raw, hashToken(raw))).toBe(true);
+  });
+
+  it('rejects a raw token that does not match the expected hash', () => {
+    expect(safeTokenMatch('wrong-token', hashToken('session-token-abc123'))).toBe(false);
+  });
+
+  it('rejects a hash of a different length instead of throwing', () => {
+    expect(safeTokenMatch('session-token-abc123', 'not-a-valid-hash')).toBe(false);
+  });
+});
+
+describe('identifier hashing', () => {
+  it('is deterministic for the same value and secret', () => {
+    expect(hashIdentifier('user@example.com', 'secret-1')).toBe(hashIdentifier('user@example.com', 'secret-1'));
+  });
+
+  it('produces a different digest for a different secret', () => {
+    expect(hashIdentifier('user@example.com', 'secret-1')).not.toBe(hashIdentifier('user@example.com', 'secret-2'));
+  });
+});
 
 describe('credential storage', () => {
   it('hashes passwords with Argon2id and verifies them', async () => {
