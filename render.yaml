@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: celestialweb-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_SSL
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: IP_HASH_SECRET
+        sync: false
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
