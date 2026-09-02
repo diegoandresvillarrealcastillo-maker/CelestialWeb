@@ -1,0 +1,8 @@
+title = "Celestial secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Environment template contains names only"
+paths = ['''\.env\.example$''']

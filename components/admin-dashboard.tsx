@@ -1,0 +1,65 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { formatCop } from '@/data/catalog';
+
+const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+type Tab = 'overview' | 'products' | 'orders' | 'categories' | 'promotions';
+type Product = { id: string; slug: string; name: string; priceCop: number; image: string; active?: boolean };
+type Order = { id: string; orderNumber: string; status: string; totalCop: number; email: string; customerName?: string; createdAt: string };
+type Category = { id: string; slug: string; name: string; description?: string | null; active: boolean; sortOrder: number };
+type Promotion = { id: string; name: string; code?: string | null; kind: 'percentage' | 'fixed' | 'bundle'; configuration: Record<string, string | number | boolean>; active: boolean };
+type Overview = { activeProducts: number; pendingOrders: number; customers: number; confirmedRevenueCop: number };
+
+export function AdminDashboard() {
+  const [tab, setTab] = useState<Tab>('overview');
+  const [csrf, setCsrf] = useState('');
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => { void load(); }, []);
+  async function load() {
+    const options = { credentials: 'include' as const };
+    const me = await fetch(`${apiUrl}/api/auth/me`, options);
+    if (!me.ok) { setAuthorized(false); return; }
+    const user = await me.json() as { user: { roles: string[] } };
+    if (!user.user.roles.includes('admin')) { setAuthorized(false); return; }
+    setAuthorized(true);
+    const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, options);
+    setCsrf((await csrfResponse.json() as { csrfToken: string }).csrfToken);
+    const [stats, productData, orderData, categoryData, promotionData] = await Promise.all([
+      fetch(`${apiUrl}/api/admin/overview`, options).then((response) => response.json()) as Promise<{ overview: Overview }>,
+      fetch(`${apiUrl}/api/products?limit=100`, options).then((response) => response.json()) as Promise<{ products: Product[] }>,
+      fetch(`${apiUrl}/api/admin/orders`, options).then((response) => response.json()) as Promise<{ orders: Order[] }>,
+      fetch(`${apiUrl}/api/admin/categories`, options).then((response) => response.json()) as Promise<{ categories: Category[] }>,
+      fetch(`${apiUrl}/api/admin/promotions`, options).then((response) => response.json()) as Promise<{ promotions: Promotion[] }>,
+    ]);
+    setOverview(stats.overview); setProducts(productData.products); setOrders(orderData.orders); setCategories(categoryData.categories); setPromotions(promotionData.promotions);
+  }
+
+  async function mutate(path: string, method: string, body?: object) {
+    setMessage('');
+    const response = await fetch(`${apiUrl}${path}`, { method, credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrf }, body: body ? JSON.stringify(body) : undefined });
+    const result = response.status === 204 ? {} : await response.json() as { error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible guardar el cambio.');
+    setMessage('Cambio guardado y auditado.');
+    await load();
+  }
+
+  if (authorized === null) return <main className="admin-loading">Verificando acceso…</main>;
+  if (!authorized) return <main className="admin-loading"><h1>Acceso administrativo</h1><p>Esta sección exige una sesión con rol de administrador validado por el servidor.</p><Link className="button button-primary" href="/cuenta">Ir a mi cuenta</Link></main>;
+
+  return <main className="admin-shell"><aside className="admin-nav"><div><small>CELESTIAL</small><b>Administración</b></div>{(['overview', 'products', 'orders', 'categories', 'promotions'] as Tab[]).map((item) => <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones' } as Record<Tab, string>)[item]}</button>)}<Link href="/">← Volver a la tienda</Link></aside><section className="admin-main"><header><div><p>Panel seguro</p><h1>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones' } as Record<Tab, string>)[tab]}</h1></div><span>Rol: Administrador</span></header>{message && <p className="admin-message" role="status">{message}</p>}
+    {tab === 'overview' && overview && <div className="stat-grid"><article><span>Productos activos</span><b>{overview.activeProducts}</b></article><article><span>Pedidos pendientes</span><b>{overview.pendingOrders}</b></article><article><span>Clientes</span><b>{overview.customers}</b></article><article><span>Ventas confirmadas</span><b>{formatCop(overview.confirmedRevenueCop)}</b></article></div>}
+    {tab === 'products' && <><form className="admin-form inline-form" action={async (formData) => { try { await mutate('/api/admin/products', 'POST', { slug: formData.get('slug'), name: formData.get('name'), description: formData.get('description'), priceCop: Number(formData.get('priceCop')), imagePath: formData.get('imagePath'), collection: formData.get('collection'), categoryId: formData.get('categoryId') || undefined, colors: [], fragrances: [], options: [], features: ['Producto artesanal'] }); } catch (error) { setMessage(error instanceof Error ? error.message : 'Error'); } }}><h2>Nuevo producto</h2><input name="name" placeholder="Nombre" required /><input name="slug" placeholder="slug-del-producto" required /><input name="priceCop" type="number" min="0" placeholder="Precio COP" required /><input name="imagePath" placeholder="/images/products/imagen.webp" required /><select name="collection"><option value="general">General</option><option value="navidad">Navidad</option></select><select name="categoryId" required><option value="">Categoría</option>{categories.filter((item) => item.active).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select><textarea name="description" placeholder="Descripción completa" required minLength={10} /><button>Crear</button></form><div className="admin-table"><div className="admin-row admin-head"><span>Producto</span><span>Precio</span><span>Acciones</span></div>{products.map((product) => <div className="admin-row" key={product.id}><span className="admin-product"><img src={product.image} alt="" /><b>{product.name}</b></span><input aria-label={`Precio de ${product.name}`} type="number" defaultValue={product.priceCop} onBlur={(event) => { const value = Number(event.target.value); if (value !== product.priceCop) void mutate(`/api/admin/products/${product.id}`, 'PATCH', { priceCop: value }).catch((error) => setMessage(error.message)); }} /><span><Link href={`/producto/${product.slug}`}>Ver</Link><button onClick={() => void mutate(`/api/admin/products/${product.id}`, 'DELETE').catch((error) => setMessage(error.message))}>Desactivar</button></span></div>)}</div></>}
+    {tab === 'orders' && <div className="admin-table"><div className="admin-row order admin-head"><span>Pedido</span><span>Cliente</span><span>Total</span><span>Estado</span></div>{orders.map((order) => <div className="admin-row order" key={order.id}><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><span>{order.customerName ?? order.email}<small>{order.email}</small></span><b>{formatCop(order.totalCop)}</b><select value={order.status} onChange={(event) => void mutate(`/api/admin/orders/${order.id}`, 'PATCH', { status: event.target.value }).catch((error) => setMessage(error.message))}>{['pending','confirmed','preparing','shipped','completed','cancelled'].map((status) => <option value={status} key={status}>{status}</option>)}</select></div>)}</div>}
+    {tab === 'categories' && <><form className="admin-form inline-form small" action={async (formData) => { try { await mutate('/api/admin/categories', 'POST', { slug: formData.get('slug'), name: formData.get('name'), description: null, active: true, sortOrder: Number(formData.get('sortOrder')) }); } catch (error) { setMessage(error instanceof Error ? error.message : 'Error'); } }}><h2>Nueva categoría</h2><input name="name" placeholder="Nombre" required /><input name="slug" placeholder="slug" required /><input name="sortOrder" type="number" min="0" defaultValue="0" /><button>Crear</button></form><div className="admin-table">{categories.map((category) => <div className="admin-row" key={category.id}><span><b>{category.name}</b><small>{category.slug}</small></span><span>Orden {category.sortOrder}</span><button onClick={() => void mutate(`/api/admin/categories/${category.id}`, 'PUT', { slug: category.slug, name: category.name, description: category.description ?? null, active: !category.active, sortOrder: category.sortOrder }).catch((error) => setMessage(error.message))}>{category.active ? 'Desactivar' : 'Activar'}</button></div>)}</div></>}
+    {tab === 'promotions' && <><form className="admin-form inline-form small" action={async (formData) => { try { const kind = String(formData.get('kind')); await mutate('/api/admin/promotions', 'POST', { name: formData.get('name'), code: formData.get('code') || null, kind, configuration: { value: Number(formData.get('value')) }, active: false }); } catch (error) { setMessage(error instanceof Error ? error.message : 'Error'); } }}><h2>Nueva promoción</h2><input name="name" placeholder="Nombre" required /><input name="code" placeholder="Código opcional" /><select name="kind"><option value="percentage">Porcentaje</option><option value="fixed">Valor fijo</option><option value="bundle">Bundle</option></select><input name="value" type="number" min="0" placeholder="Valor" required /><button>Crear inactiva</button></form><div className="admin-table">{promotions.map((promotion) => <div className="admin-row" key={promotion.id}><span><b>{promotion.name}</b><small>{promotion.code ?? 'Sin código'} · {promotion.kind}</small></span><span>{String(promotion.configuration.value ?? '')}</span><button onClick={() => void mutate(`/api/admin/promotions/${promotion.id}`, 'PUT', { name: promotion.name, code: promotion.code ?? null, kind: promotion.kind, configuration: promotion.configuration, active: !promotion.active, startsAt: null, endsAt: null }).catch((error) => setMessage(error.message))}>{promotion.active ? 'Pausar' : 'Activar'}</button></div>)}</div></>}
+  </section></main>;
+}
