@@ -14,7 +14,7 @@ export function SiteFooter() {
         <div><b>Ayuda</b><Link href="/cuenta">Mi cuenta</Link><Link href="/carrito">Mi bolsa</Link><Link href="/#cuidados">Cuida tu vela</Link></div>
         <div><b>Encuéntranos</b><a href="https://instagram.com/celestialvelasart" target="_blank" rel="noreferrer">{catalogFacts.instagram}</a><a href="tel:+573205279249">{catalogFacts.contactPhone}</a><span>Colombia</span></div>
       </div>
-      <div className="footer-bottom"><span>© 2026 Celestial Velas Artesanales</span><span>Hecho con intención en Colombia</span></div>
+      <div className="footer-bottom"><span>© 2026 Celestial Velas Artesanales</span><Link href="/politica-de-privacidad">Política de privacidad</Link><span>Hecho con intención en Colombia</span></div>
     </footer>
   );
 }
