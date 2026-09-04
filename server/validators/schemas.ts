@@ -62,7 +62,9 @@ export const adminProductSchema = z.object({
   priceCop: z.number().int().min(0).max(100_000_000).optional(),
   priceMaxCop: z.number().int().min(0).max(100_000_000).nullable().optional(),
   priceLabel: z.string().trim().max(120).nullable().optional(),
-  imagePath: z.string().trim().max(500).regex(/^\/images\/[a-zA-Z0-9_./-]+$/).optional(),
+  imagePath: z.string().trim().max(500)
+    .regex(/^\/images\/[a-zA-Z0-9_./-]+$|^https:\/\/[a-zA-Z0-9.-]+\.supabase\.co\/storage\/v1\/object\/public\/[a-zA-Z0-9_./-]+$/)
+    .optional(),
   dimensions: z.string().trim().max(120).nullable().optional(),
   weight: z.string().trim().max(60).nullable().optional(),
   colors: z.array(z.string().trim().min(1).max(80)).max(30).optional(),

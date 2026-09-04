@@ -23,7 +23,7 @@ export type CatalogProduct = {
   fragrances?: string[];
   options?: string[];
   features: string[];
-  availability: 'Hecho bajo pedido';
+  availability: string;
   source: { catalog: 'general' | 'navidad'; page: number };
   featured?: boolean;
   popular?: boolean;

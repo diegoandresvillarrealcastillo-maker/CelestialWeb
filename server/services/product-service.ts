@@ -1,11 +1,11 @@
 import type { Pool } from 'pg';
 import type { ProductService } from './contracts.js';
 
-const selectProduct = `
+export const selectProduct = `
   SELECT p.id, p.external_id AS "externalId", p.slug, p.name, p.description,
          p.price_cop AS "priceCop", p.price_max_cop AS "priceMaxCop", p.price_label AS "priceLabel",
          p.image_path AS image, p.dimensions, p.weight, p.colors, p.fragrances, p.options, p.features,
-         p.availability, p.collection, p.featured, p.popular, p.reference_image AS "referenceImage",
+         p.availability, p.collection, p.featured, p.popular, p.reference_image AS "referenceImage", p.active,
          COALESCE(array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL), '{}'::text[]) AS categories,
          COALESCE(jsonb_agg(DISTINCT jsonb_build_object('path', pi.image_path, 'alt', pi.alt_text, 'order', pi.sort_order))
            FILTER (WHERE pi.id IS NOT NULL), '[]'::jsonb) AS images

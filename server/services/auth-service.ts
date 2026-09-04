@@ -27,6 +27,17 @@ export class PostgresAuthService implements AuthService {
     return hashIdentifier(meta.ip || 'unknown', this.env.IP_HASH_SECRET);
   }
 
+  private async grantAdminRole(client: PoolClient, userId: string) {
+    await client.query("SELECT set_config('app.user_role', 'admin', true)");
+    await client.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT $1, id FROM roles WHERE name = 'admin'
+       ON CONFLICT (user_id, role_id) DO NOTHING`,
+      [userId],
+    );
+    await client.query("SELECT set_config('app.user_role', 'customer', true)");
+  }
+
   private async lookupUser(email: string): Promise<LoginUser | null> {
     return inTransaction(this.pool, async (client) => {
       await client.query("SELECT set_config('app.login_email', $1, true)", [email]);
@@ -115,6 +126,9 @@ export class PostgresAuthService implements AuthService {
            SELECT $1, id FROM roles WHERE name = 'customer'`,
           [userId],
         );
+        if (this.env.adminEmails.includes(input.email.toLowerCase())) {
+          await this.grantAdminRole(client, userId);
+        }
         await client.query(
           `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
            VALUES ($1, $2, now() + interval '24 hours')`,
@@ -166,7 +180,11 @@ export class PostgresAuthService implements AuthService {
       const roleResult = await client.query<{ name: string }>(
         `SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`, [user.id],
       );
-      const roles = roleResult.rows.map((row) => row.name);
+      let roles = roleResult.rows.map((row) => row.name);
+      if (!roles.includes('admin') && this.env.adminEmails.includes(user.email.toLowerCase())) {
+        await this.grantAdminRole(client, user.id);
+        roles = [...roles, 'admin'];
+      }
       const role = roles.includes('admin') ? 'admin' : roles[0] ?? 'customer';
       await client.query("SELECT set_config('app.user_role', $1, true)", [role]);
       await client.query('UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = $1', [user.id]);
