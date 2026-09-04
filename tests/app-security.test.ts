@@ -21,6 +21,7 @@ function services(): Services {
         if (email !== 'cliente@example.com' || password !== 'Valid-password-123!') throw new HttpError(401, 'Credenciales inválidas.', 'INVALID_CREDENTIALS');
         return { token: 'new-session-token', csrfToken: 'csrf-new', user: customer };
       }),
+      loginWithGoogle: vi.fn(async () => ({ token: 'google-session-token', csrfToken: 'csrf-google', user: customer })),
       logout: vi.fn(async () => undefined), rotateCsrf: vi.fn(async () => 'csrf-rotated'),
       forgotPassword: vi.fn(async () => undefined), resetPassword: vi.fn(async () => undefined), verifyEmail: vi.fn(async () => undefined),
       updateProfile: vi.fn(async (auth) => auth), changePassword: vi.fn(async () => undefined),

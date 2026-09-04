@@ -1,3 +1,4 @@
+import { OAuth2Client } from 'google-auth-library';
 import type { Pool, PoolClient } from 'pg';
 import type { AppEnv } from '../config/env.js';
 import { inTransaction, withAuthContext } from '../database/pool.js';
@@ -209,6 +210,92 @@ export class PostgresAuthService implements AuthService {
           fullName: profile.rows[0]?.full_name ?? null,
           emailVerified: Boolean(user.email_verified_at),
         },
+      };
+    });
+  }
+
+  async loginWithGoogle(idToken: string, meta: RequestMeta): Promise<SessionResult> {
+    if (!this.env.GOOGLE_CLIENT_ID) {
+      throw new HttpError(503, 'El inicio de sesión con Google no está configurado.', 'GOOGLE_NOT_CONFIGURED');
+    }
+    let payload: { email?: string; email_verified?: boolean; sub: string; name?: string } | undefined;
+    try {
+      const ticket = await new OAuth2Client(this.env.GOOGLE_CLIENT_ID).verifyIdToken({
+        idToken, audience: this.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      payload = undefined;
+    }
+    if (!payload?.email || !payload.sub) {
+      throw new HttpError(401, 'No fue posible verificar tu cuenta de Google.', 'GOOGLE_TOKEN_INVALID');
+    }
+    const email = payload.email;
+    const googleSub = payload.sub;
+    const emailVerifiedByGoogle = payload.email_verified === true;
+    const googleName = payload.name ?? null;
+
+    return inTransaction(this.pool, async (client) => {
+      await client.query(
+        "SELECT set_config('app.login_email', $1, true), set_config('app.registration_email', $1, true), set_config('app.auth_event', 'true', true)",
+        [email],
+      );
+      const existing = await client.query<{ id: string; google_sub: string | null; email_verified_at: Date | null; status: string }>(
+        'SELECT id, google_sub, email_verified_at, status FROM users WHERE email = $1 LIMIT 1', [email],
+      );
+
+      let userId: string;
+      let emailVerifiedAt: Date | null;
+      if (existing.rows[0]) {
+        const user = existing.rows[0];
+        if (user.status !== 'active') throw new HttpError(403, 'Tu cuenta no está activa.', 'ACCOUNT_INACTIVE');
+        userId = user.id;
+        await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.user_role', 'customer', true)", [userId]);
+        if (!user.google_sub) await client.query('UPDATE users SET google_sub = $2 WHERE id = $1', [userId, googleSub]);
+        emailVerifiedAt = user.email_verified_at;
+        if (!emailVerifiedAt && emailVerifiedByGoogle) {
+          await client.query('UPDATE users SET email_verified_at = now() WHERE id = $1', [userId]);
+          emailVerifiedAt = new Date();
+        }
+      } else {
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO users (email, password_hash, google_sub, email_verified_at)
+           VALUES ($1, NULL, $2, $3) RETURNING id`,
+          [email, googleSub, emailVerifiedByGoogle ? new Date() : null],
+        );
+        userId = inserted.rows[0].id;
+        emailVerifiedAt = emailVerifiedByGoogle ? new Date() : null;
+        await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.user_role', 'customer', true)", [userId]);
+        await client.query('INSERT INTO profiles (user_id, full_name) VALUES ($1, $2)', [userId, googleName]);
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE name = 'customer'`, [userId],
+        );
+      }
+
+      const roleResult = await client.query<{ name: string }>(
+        `SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`, [userId],
+      );
+      let roles = roleResult.rows.map((row) => row.name);
+      if (!roles.includes('admin') && this.env.adminEmails.includes(email.toLowerCase())) {
+        await this.grantAdminRole(client, userId);
+        roles = [...roles, 'admin'];
+      }
+      const role = roles.includes('admin') ? 'admin' : roles[0] ?? 'customer';
+      await client.query("SELECT set_config('app.user_role', $1, true)", [role]);
+
+      const profile = await client.query<{ full_name: string | null }>('SELECT full_name FROM profiles WHERE user_id = $1', [userId]);
+      const token = randomToken();
+      const csrfToken = randomToken();
+      await client.query(
+        `INSERT INTO sessions (user_id, token_hash, csrf_hash, ip_hash, user_agent, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' hours')::interval)`,
+        [userId, hashToken(token), hashToken(csrfToken), this.ipHash(meta), meta.userAgent?.slice(0, 300) ?? null, this.env.SESSION_TTL_HOURS],
+      );
+      await this.recordAttempt(client, email, meta, true);
+
+      return {
+        token, csrfToken,
+        user: { userId, email, roles, fullName: profile.rows[0]?.full_name ?? googleName, emailVerified: Boolean(emailVerifiedAt) },
       };
     });
   }

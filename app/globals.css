@@ -329,6 +329,10 @@ button { font: inherit; }
 .account-tabs { display: grid; grid-template-columns: 1fr 1fr; margin: 28px 0; border-bottom: 1px solid var(--line); }
 .account-tabs button { padding: 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #75685f; cursor: pointer; }
 .account-tabs button.active { border-color: var(--clay); color: var(--ink); }
+.google-signin-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; margin-bottom: 8px; }
+.divider-text { position: relative; width: 100%; text-align: center; }
+.divider-text::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line); }
+.divider-text span { position: relative; padding: 0 12px; background: var(--cream); color: #97897e; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .honeypot { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
 .forgot-link, .logout-button { display: block; margin: 18px auto 0; padding: 0 0 4px; border: 0; border-bottom: 1px solid currentColor; background: transparent; color: #75685f; font-size: 11px; cursor: pointer; }
 .signed-in .account-status { display: flex; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
