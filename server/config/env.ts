@@ -22,6 +22,7 @@ const envSchema = z.object({
   ADMIN_EMAILS: z.string().optional(),
   REQUIRE_EMAIL_VERIFICATION: booleanString.default(false),
   GOOGLE_CLIENT_ID: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
 });

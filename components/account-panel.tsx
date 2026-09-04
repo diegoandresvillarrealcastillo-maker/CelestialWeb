@@ -13,11 +13,16 @@ declare global {
         };
       };
     };
+    turnstile?: {
+      render(container: HTMLElement, options: { sitekey: string; callback: (token: string) => void }): string;
+      reset(widgetId?: string): void;
+    };
   }
 }
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 type User = { userId: string; email: string; fullName: string | null; roles: string[]; emailVerified: boolean };
 type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; receiptUrl: string | null; totalCop: number; createdAt: string };
 
@@ -34,6 +39,9 @@ export function AccountPanel() {
   const [busy, setBusy] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetId = useRef<string | undefined>(undefined);
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [reuploadingOrderId, setReuploadingOrderId] = useState<string | null>(null);
   const [reuploadBusy, setReuploadBusy] = useState(false);
 
@@ -89,9 +97,29 @@ export function AccountPanel() {
     document.body.appendChild(script);
   }, [mode, user, handleGoogleCredential]);
 
+  useEffect(() => {
+    if (!turnstileSiteKey || mode !== 'register') return;
+    function render() {
+      if (!window.turnstile || !turnstileRef.current) return;
+      turnstileRef.current.innerHTML = '';
+      turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: turnstileSiteKey!, callback: (token) => setTurnstileToken(token),
+      });
+    }
+    if (window.turnstile) { render(); return; }
+    const scriptId = 'turnstile-script';
+    const existing = document.getElementById(scriptId);
+    if (existing) { existing.addEventListener('load', render, { once: true }); return; }
+    const script = document.createElement('script');
+    script.id = scriptId; script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'; script.async = true; script.defer = true;
+    script.addEventListener('load', render, { once: true });
+    document.body.appendChild(script);
+  }, [mode]);
+
   async function submit(formData: FormData) {
     setBusy(true); setMessage('');
-    const body = Object.fromEntries(Array.from(formData.entries()).filter(([, value]) => String(value).trim() !== ''));
+    const body: Record<string, unknown> = Object.fromEntries(Array.from(formData.entries()).filter(([, value]) => String(value).trim() !== ''));
+    if (mode === 'register' && turnstileToken) body.turnstileToken = turnstileToken;
     try {
       const response = await fetch(`${apiUrl}/api/auth/${mode === 'forgot' ? 'forgot-password' : mode}`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await response.json() as { message?: string; user?: User; csrfToken?: string; error?: { message?: string } };
@@ -100,7 +128,11 @@ export function AccountPanel() {
       if (mode === 'login' && result.user && result.csrfToken) { setUser(result.user); setCsrfToken(result.csrfToken); }
       if (mode === 'register') setMode('login');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No fue posible continuar.'); }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      setTurnstileToken('');
+      if (window.turnstile && turnstileWidgetId.current) window.turnstile.reset(turnstileWidgetId.current);
+    }
   }
 
   async function reuploadReceipt(orderId: string, formData: FormData) {
@@ -147,5 +179,5 @@ export function AccountPanel() {
 
   if (user) return <section className="account-card signed-in wide"><p className="eyebrow"><span /> Mi Celestial</p><h1>Hola, {user.fullName ?? 'qué alegría verte'}</h1><p>{user.email}</p><div className="account-status"><span>Correo</span><b className={user.emailVerified ? 'verified' : ''}>{user.emailVerified ? 'Verificado ✓' : 'Pendiente'}</b></div><div className="account-status"><span>Perfil</span><b>{user.roles.includes('admin') ? 'Administrador' : 'Cliente'}</b></div><details className="account-section"><summary>Editar perfil <span>+</span></summary><form action={updateProfile}><label>Nombre completo<input name="fullName" defaultValue={user.fullName ?? ''} required minLength={2} maxLength={120} /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} /></label><button className="button button-primary">Guardar perfil</button></form></details><details className="account-section"><summary>Cambiar contraseña <span>+</span></summary><form action={changePassword}><label>Contraseña actual<input name="currentPassword" type="password" required /></label><label>Nueva contraseña<input name="newPassword" type="password" required minLength={12} maxLength={128} /></label><button className="button button-primary">Cambiar y cerrar sesiones</button></form></details><div className="order-history"><h2>Mis pedidos</h2>{orders.length ? orders.map((order) => <article key={order.id} className="order-history-line"><div className="order-history-row"><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><b>{order.status}</b><strong>{formatCop(order.totalCop)}</strong></div><div className="order-payment-row"><span className={`payment-badge payment-${order.paymentStatus}`}>{paymentStatusLabel[order.paymentStatus] ?? order.paymentStatus}</span>{order.receiptUrl && <a href={order.receiptUrl} target="_blank" rel="noreferrer">Ver comprobante</a>}{order.paymentStatus === 'rejected' && (reuploadingOrderId === order.id ? <form action={(formData) => reuploadReceipt(order.id, formData)}><input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /><button className="button button-primary" disabled={reuploadBusy}>{reuploadBusy ? 'Enviando…' : 'Enviar'}</button></form> : <button onClick={() => setReuploadingOrderId(order.id)}>Volver a cargar comprobante</button>)}</div></article>) : <p>Aún no tienes pedidos.</p>}</div><a className="button button-primary full" href="/carrito">Ver mi bolsa</a>{user.roles.includes('admin') && <a className="button button-quiet full" href="/admin">Abrir administración</a>}{message && <p className="form-message" role="status">{message}</p>}<button className="logout-button" onClick={logout}>Cerrar sesión</button></section>;
 
-  return <section className="account-card"><p className="eyebrow"><span /> Mi Celestial</p><h1>{mode === 'login' ? 'Vuelve a tu espacio' : mode === 'register' ? 'Crea tu cuenta' : 'Recupera tu acceso'}</h1><p>{mode === 'forgot' ? 'Te enviaremos un enlace de un solo uso.' : 'Guarda tus pedidos y continúa tu experiencia.'}</p><div className="account-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Ingresar</button><button className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Crear cuenta</button></div>{mode !== 'forgot' && googleClientId && <div className="google-signin-wrap"><div ref={googleButtonRef} /><p className="divider-text"><span>o continúa con tu correo</span></p></div>}<form action={submit}>{mode === 'register' && <><label>Nombre completo<input name="fullName" required minLength={2} maxLength={120} autoComplete="name" /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} autoComplete="tel" /></label></>}<label>Correo electrónico<input name="email" type="email" required maxLength={254} autoComplete="email" /></label>{mode !== 'forgot' && <label>Contraseña<input name="password" type="password" required minLength={mode === 'register' ? 12 : 1} maxLength={128} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} /></label>}{mode !== 'login' && <input className="honeypot" name="hpVerify" tabIndex={-1} autoComplete="off" data-lpignore="true" data-1p-ignore="true" aria-hidden="true" />}<button className="button button-primary full" disabled={busy}>{busy ? 'Procesando…' : mode === 'login' ? 'Ingresar de forma segura' : mode === 'register' ? 'Crear mi cuenta' : 'Enviar enlace'}</button></form>{mode === 'login' && <button className="forgot-link" onClick={() => setMode('forgot')}>Olvidé mi contraseña</button>}{mode === 'forgot' && <button className="forgot-link" onClick={() => setMode('login')}>Volver al ingreso</button>}{message && <p className="form-message" role="status">{message}</p>}</section>;
+  return <section className="account-card"><p className="eyebrow"><span /> Mi Celestial</p><h1>{mode === 'login' ? 'Vuelve a tu espacio' : mode === 'register' ? 'Crea tu cuenta' : 'Recupera tu acceso'}</h1><p>{mode === 'forgot' ? 'Te enviaremos un enlace de un solo uso.' : 'Guarda tus pedidos y continúa tu experiencia.'}</p><div className="account-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Ingresar</button><button className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Crear cuenta</button></div>{mode !== 'forgot' && googleClientId && <div className="google-signin-wrap"><div ref={googleButtonRef} /><p className="divider-text"><span>o continúa con tu correo</span></p></div>}<form action={submit}>{mode === 'register' && <><label>Nombre completo<input name="fullName" required minLength={2} maxLength={120} autoComplete="name" /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} autoComplete="tel" /></label></>}<label>Correo electrónico<input name="email" type="email" required maxLength={254} autoComplete="email" /></label>{mode !== 'forgot' && <label>Contraseña<input name="password" type="password" required minLength={mode === 'register' ? 12 : 1} maxLength={128} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} /></label>}{mode !== 'login' && <input className="honeypot" name="hpVerify" tabIndex={-1} autoComplete="off" data-lpignore="true" data-1p-ignore="true" aria-hidden="true" />}{mode === 'register' && turnstileSiteKey && <div ref={turnstileRef} className="turnstile-wrap" />}<button className="button button-primary full" disabled={busy || (mode === 'register' && Boolean(turnstileSiteKey) && !turnstileToken)}>{busy ? 'Procesando…' : mode === 'login' ? 'Ingresar de forma segura' : mode === 'register' ? 'Crear mi cuenta' : 'Enviar enlace'}</button></form>{mode === 'login' && <button className="forgot-link" onClick={() => setMode('forgot')}>Olvidé mi contraseña</button>}{mode === 'forgot' && <button className="forgot-link" onClick={() => setMode('login')}>Volver al ingreso</button>}{message && <p className="form-message" role="status">{message}</p>}</section>;
 }
