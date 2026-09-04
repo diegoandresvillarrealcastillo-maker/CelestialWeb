@@ -7,7 +7,7 @@ const csp = [
   `connect-src 'self' ${apiOrigin} https://accounts.google.com`,
   "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com",
   "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
   "script-src 'self' 'unsafe-inline' https://accounts.google.com",
   "frame-src https://accounts.google.com",
   "object-src 'none'",
