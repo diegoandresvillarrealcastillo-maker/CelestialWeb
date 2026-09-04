@@ -7,10 +7,17 @@ import { useCart } from './cart-provider';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+type CreatedOrder = { id: string; orderNumber: string; totalCop: number };
+type PaymentSettings = { bankKey: string | null; accountHolder: string | null; qrImageUrl: string | null; instructions: string | null };
+
 export function CartView() {
   const { items, subtotalCop, removeItem, setQuantity, clear } = useCart();
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
+  const [receiptStatus, setReceiptStatus] = useState<'idle' | 'uploading' | 'done'>('idle');
+  const [receiptMessage, setReceiptMessage] = useState('');
 
   async function submitOrder(formData: FormData) {
     setSubmitting(true); setMessage('');
@@ -29,13 +36,65 @@ export function CartView() {
           customerNote: formData.get('customerNote') || undefined,
         }),
       });
-      const result = await response.json() as { order?: { orderNumber: string }; error?: { message?: string } };
-      if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible crear el pedido.');
+      const result = await response.json() as { order?: CreatedOrder; error?: { message?: string } };
+      if (!response.ok || !result.order) throw new Error(result.error?.message ?? 'No fue posible crear el pedido.');
       clear();
-      setMessage(`Pedido #${result.order?.orderNumber ?? ''} creado. Te contactaremos para confirmar el envío.`);
+      setCreatedOrder(result.order);
+      const settingsResponse = await fetch(`${apiUrl}/api/payment-settings`);
+      if (settingsResponse.ok) setPaymentSettings((await settingsResponse.json() as { settings: PaymentSettings | null }).settings);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No fue posible crear el pedido.');
     } finally { setSubmitting(false); }
+  }
+
+  async function uploadReceipt(formData: FormData) {
+    if (!createdOrder) return;
+    setReceiptStatus('uploading'); setReceiptMessage('');
+    try {
+      const file = formData.get('file') as File | null;
+      if (!file || !file.size) throw new Error('Selecciona la imagen de tu comprobante.');
+      const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, { credentials: 'include' });
+      const { csrfToken } = await csrfResponse.json() as { csrfToken: string };
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch(`${apiUrl}/api/orders/${createdOrder.id}/receipt`, {
+        method: 'POST', credentials: 'include', headers: { 'x-csrf-token': csrfToken }, body,
+      });
+      const result = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible enviar el comprobante.');
+      setReceiptStatus('done');
+    } catch (error) {
+      setReceiptStatus('idle');
+      setReceiptMessage(error instanceof Error ? error.message : 'No fue posible enviar el comprobante.');
+    }
+  }
+
+  if (createdOrder) {
+    return (
+      <div className="payment-step checkout-card">
+        <p className="eyebrow"><span /> Pedido #{createdOrder.orderNumber}</p>
+        <h1>Realiza tu transferencia</h1>
+        <p className="detail-price">{formatCop(createdOrder.totalCop)}</p>
+        {paymentSettings ? (
+          <div className="payment-details">
+            {paymentSettings.qrImageUrl && <img className="payment-qr" src={paymentSettings.qrImageUrl} alt="Código QR para transferencia" />}
+            {paymentSettings.bankKey && <p><b>Llave / cuenta:</b> {paymentSettings.bankKey}</p>}
+            {paymentSettings.accountHolder && <p><b>A nombre de:</b> {paymentSettings.accountHolder}</p>}
+            {paymentSettings.instructions && <p>{paymentSettings.instructions}</p>}
+          </div>
+        ) : <p>Escríbenos por WhatsApp para recibir los datos de transferencia.</p>}
+        {receiptStatus === 'done' ? (
+          <p className="form-message" role="status">Comprobante recibido. Tu pago quedó <b>pendiente de verificación</b> — te avisaremos cuando lo confirmemos.</p>
+        ) : (
+          <form action={uploadReceipt}>
+            <label>Adjuntar comprobante de pago<input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></label>
+            <button className="button button-primary full" disabled={receiptStatus === 'uploading'}>{receiptStatus === 'uploading' ? 'Enviando…' : 'Adjuntar comprobante de pago'}</button>
+          </form>
+        )}
+        {receiptMessage && <p className="form-message" role="status">{receiptMessage}</p>}
+        <Link className="button button-quiet full" href="/cuenta">Ver mis pedidos</Link>
+      </div>
+    );
   }
 
   if (!items.length) return <div className="cart-empty"><span>✦</span><h1>Tu bolsa espera una chispa</h1><p>Explora aromas, formas y detalles creados a mano.</p><Link className="button button-primary" href="/catalogo">Ir al catálogo ↗</Link>{message && <p role="status">{message}</p>}</div>;

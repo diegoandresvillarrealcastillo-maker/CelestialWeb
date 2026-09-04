@@ -12,6 +12,7 @@ import { generalLimit } from './middleware/limits.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { orderRoutes } from './routes/orders.js';
+import { paymentSettingsRoutes } from './routes/payment-settings.js';
 import { productRoutes } from './routes/products.js';
 import { PostgresAdminService } from './services/admin-service.js';
 import { PostgresAuthService } from './services/auth-service.js';
@@ -24,7 +25,7 @@ export function createServices(pool: Pool, env: AppEnv): Services {
   return {
     auth: new PostgresAuthService(pool, env, new WebhookEmailSender(env)),
     products: new PostgresProductService(pool),
-    orders: new PostgresOrderService(pool),
+    orders: new PostgresOrderService(pool, env),
     admin: new PostgresAdminService(pool, env),
   };
 }
@@ -86,6 +87,7 @@ export function createApp(env: AppEnv, services: Services) {
   app.use('/api/auth', authRoutes(services.auth, env));
   app.use('/api/products', productRoutes(services.products));
   app.use('/api/orders', orderRoutes(services.orders));
+  app.use('/api/payment-settings', paymentSettingsRoutes(services.admin));
   app.use('/api/admin', adminRoutes(services.admin));
   app.use(notFoundHandler);
   app.use(errorHandler);

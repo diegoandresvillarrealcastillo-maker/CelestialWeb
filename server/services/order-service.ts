@@ -1,9 +1,12 @@
 import type { Pool } from 'pg';
+import type { AppEnv } from '../config/env.js';
 import { withAuthContext } from '../database/pool.js';
 import { HttpError } from '../http/errors.js';
 import { hashToken } from '../security/tokens.js';
 import type { AuthContext } from '../types.js';
+import { writeAuditLog } from './audit.js';
 import type { OrderService } from './contracts.js';
+import { getSignedReceiptUrl, uploadPaymentReceipt } from './storage.js';
 
 type OrderInput = {
   items: Array<{ productId: string; quantity: number; selectedOptions: Record<string, string> }>;
@@ -17,7 +20,7 @@ type TrustedProduct = {
 };
 
 export class PostgresOrderService implements OrderService {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool, private env: AppEnv) {}
 
   async create(auth: AuthContext, rawInput: unknown) {
     if (!auth.emailVerified) throw new HttpError(403, 'Verifica tu correo antes de crear un pedido.', 'EMAIL_NOT_VERIFIED');
@@ -93,34 +96,62 @@ export class PostgresOrderService implements OrderService {
   async list(auth: AuthContext) {
     return withAuthContext(this.pool, auth, async (client) => {
       const result = await client.query(
-        `SELECT id, order_number AS "orderNumber", status, currency,
+        `SELECT id, order_number AS "orderNumber", status, payment_status AS "paymentStatus",
+                receipt_path AS "receiptPath", currency,
                 subtotal_cop AS "subtotalCop", discount_cop AS "discountCop",
                 shipping_cop AS "shippingCop", total_cop AS "totalCop", created_at AS "createdAt"
            FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
         [auth.userId],
       );
-      return result.rows;
+      return Promise.all(result.rows.map(async ({ receiptPath, ...order }) => ({
+        ...order,
+        receiptUrl: receiptPath ? await getSignedReceiptUrl(this.env, receiptPath) : null,
+      })));
     });
   }
 
   async get(auth: AuthContext, orderId: string) {
     return withAuthContext(this.pool, auth, async (client) => {
       const orderResult = await client.query(
-        `SELECT id, order_number AS "orderNumber", status, currency,
+        `SELECT id, order_number AS "orderNumber", status, payment_status AS "paymentStatus",
+                receipt_path AS "receiptPath", currency,
                 subtotal_cop AS "subtotalCop", discount_cop AS "discountCop",
                 shipping_cop AS "shippingCop", total_cop AS "totalCop",
                 shipping_address AS "shippingAddress", customer_note AS "customerNote", created_at AS "createdAt"
            FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
         [orderId, auth.userId],
       );
-      if (!orderResult.rows[0]) return null;
+      const { receiptPath, ...order } = orderResult.rows[0] ?? {};
+      if (!order.id) return null;
       const items = await client.query(
         `SELECT product_id AS "productId", product_name AS "productName", unit_price_cop AS "unitPriceCop",
                 quantity, selected_options AS "selectedOptions", line_total_cop AS "lineTotalCop"
            FROM order_items WHERE order_id = $1 ORDER BY created_at`,
         [orderId],
       );
-      return { ...orderResult.rows[0], items: items.rows };
+      return { ...order, receiptUrl: receiptPath ? await getSignedReceiptUrl(this.env, receiptPath) : null, items: items.rows };
+    });
+  }
+
+  async attachReceipt(auth: AuthContext, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }) {
+    return withAuthContext(this.pool, auth, async (client) => {
+      const orderResult = await client.query<{ id: string; payment_status: string }>(
+        `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        [orderId, auth.userId],
+      );
+      const order = orderResult.rows[0];
+      if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+      if (!['pending', 'rejected'].includes(order.payment_status)) {
+        throw new HttpError(409, 'Este pedido no admite un nuevo comprobante en su estado actual.', 'RECEIPT_NOT_ALLOWED');
+      }
+      const receiptPath = await uploadPaymentReceipt(this.env, orderId, file);
+      const result = await client.query(
+        `UPDATE orders SET receipt_path = $2, receipt_uploaded_at = now(), payment_status = 'pending_verification'
+         WHERE id = $1 RETURNING id, payment_status AS "paymentStatus", receipt_uploaded_at AS "receiptUploadedAt"`,
+        [orderId, receiptPath],
+      );
+      await writeAuditLog(client, auth.userId, 'order.receipt_uploaded', 'order', orderId, {});
+      return result.rows[0];
     });
   }
 }
