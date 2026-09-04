@@ -376,6 +376,11 @@ button { font: inherit; }
 .inline-form input, .inline-form select, .inline-form textarea { min-width: 0; padding: 10px; border: 1px solid var(--line); background: #fbfaf7; }
 .inline-form button, .admin-row button { border: 0; background: var(--ink); color: white; cursor: pointer; }
 .inline-form.small { grid-template-columns: repeat(4, 1fr); }
+.image-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: #786b62; }
+.image-field .image-preview { width: 60px; height: 60px; object-fit: cover; border: 1px solid var(--line); }
+.form-actions { grid-column: span 2; display: flex; gap: 10px; align-items: center; }
+.form-actions button[type="button"] { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+.inactive-badge { color: #b3261e; font-weight: 400; font-size: 10px; }
 .admin-table { background: white; border: 1px solid var(--line); }
 .admin-row { display: grid; grid-template-columns: minmax(220px, 1fr) 180px 180px; align-items: center; min-height: 76px; padding: 10px 18px; border-bottom: 1px solid var(--line); gap: 18px; font-size: 12px; }
 .admin-row:last-child { border: 0; }

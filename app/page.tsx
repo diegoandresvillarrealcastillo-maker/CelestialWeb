@@ -1,9 +1,8 @@
 import Link from 'next/link';
 import { ProductCard } from '@/components/product-card';
-import { catalogFacts, products } from '@/data/catalog';
+import { catalogFacts } from '@/data/catalog';
+import { getAllProducts } from '@/lib/catalog-api';
 
-const featured = products.filter((product) => product.featured).slice(0, 4);
-const popular = products.filter((product) => product.popular).slice(0, 4);
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 const organizationData = {
   '@context': 'https://schema.org',
@@ -22,7 +21,11 @@ const categoryTiles = [
   { name: 'Recordatorios', copy: 'Pequeños gestos, grandes memorias', image: '/images/products/recordatorios-flores.webp', href: '/catalogo?category=recordatorios' },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const products = await getAllProducts();
+  const featured = products.filter((product) => product.featured).slice(0, 4);
+  const popular = products.filter((product) => product.popular).slice(0, 4);
+  const productCount = products.length;
   return (
     <main>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData).replace(/</g, '\\u003c') }} />
@@ -32,13 +35,13 @@ export default function Home() {
           <h1>Luz hecha<br />con <em>intención.</em></h1>
           <p className="hero-lede">En Celestial Velas creamos piezas artesanales que convierten un espacio cotidiano en un recuerdo: cera vegetal, aromas envolventes y detalles hechos para ti.</p>
           <div className="hero-actions"><Link className="button button-primary" href="/catalogo">Explorar colección <span>↗</span></Link><Link className="button button-quiet" href="#artesania">Conoce el proceso</Link></div>
-          <dl className="hero-facts"><div><dt>100%</dt><dd>Cera vegetal</dd></div><div><dt>{catalogFacts.productCount}</dt><dd>Diseños artesanales</dd></div><div><dt>Hecho</dt><dd>Bajo pedido</dd></div></dl>
+          <dl className="hero-facts"><div><dt>100%</dt><dd>Cera vegetal</dd></div><div><dt>{productCount}</dt><dd>Diseños artesanales</dd></div><div><dt>Hecho</dt><dd>Bajo pedido</dd></div></dl>
         </div>
         <div className="hero-visual" aria-label="Colección de velas aromáticas Celestial"><div className="hero-image-wrap"><img src="/images/products/hero-general.webp" alt="Velas Celestial decoradas con café, canela, flores y naranja" /></div><div className="hero-note"><span>01</span><p><b>Café</b><br />El favorito de la casa</p></div><div className="hero-seal" aria-hidden="true"><span>✦</span><small>ARTE · AROMA · CALMA</small></div></div>
       </section>
 
       <section className="featured-section" aria-labelledby="featured-heading">
-        <div className="section-heading"><div><p className="eyebrow"><span /> Selección Celestial</p><h2 id="featured-heading">Detalles que encienden emociones</h2></div><Link href="/catalogo">Ver los {catalogFacts.productCount} productos <span>→</span></Link></div>
+        <div className="section-heading"><div><p className="eyebrow"><span /> Selección Celestial</p><h2 id="featured-heading">Detalles que encienden emociones</h2></div><Link href="/catalogo">Ver los {productCount} productos <span>→</span></Link></div>
         <div className="product-grid">{featured.map((product, index) => <ProductCard product={product} index={index} key={product.id} />)}</div>
       </section>
 

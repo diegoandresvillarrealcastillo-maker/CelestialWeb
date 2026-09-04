@@ -25,7 +25,7 @@ export function createServices(pool: Pool, env: AppEnv): Services {
     auth: new PostgresAuthService(pool, env, new WebhookEmailSender(env)),
     products: new PostgresProductService(pool),
     orders: new PostgresOrderService(pool),
-    admin: new PostgresAdminService(pool),
+    admin: new PostgresAdminService(pool, env),
   };
 }
 

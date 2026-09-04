@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
+import type { AppEnv } from '../config/env.js';
 import { withAuthContext } from '../database/pool.js';
 import { HttpError } from '../http/errors.js';
+import { selectProduct } from './product-service.js';
+import { uploadProductImage as uploadToStorage } from './storage.js';
 import type { AuthContext } from '../types.js';
 import type { AdminService } from './contracts.js';
 
@@ -16,7 +19,18 @@ const columnMap: Record<string, string> = {
 const jsonFields = new Set(['colors', 'fragrances', 'options', 'features']);
 
 export class PostgresAdminService implements AdminService {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool, private env: AppEnv) {}
+
+  async listProducts(auth: AuthContext) {
+    return withAuthContext(this.pool, auth, async (client) => {
+      const result = await client.query(`${selectProduct} GROUP BY p.id ORDER BY p.created_at DESC`);
+      return result.rows;
+    });
+  }
+
+  async uploadProductImage(_auth: AuthContext, file: { buffer: Buffer; mimetype: string; originalname: string }) {
+    return uploadToStorage(this.env, file);
+  }
 
   async getOverview(auth: AuthContext) {
     return withAuthContext(this.pool, auth, async (client) => {

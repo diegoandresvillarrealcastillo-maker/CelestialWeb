@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { MulterError } from 'multer';
 import { ZodError } from 'zod';
 
 export class HttpError extends Error {
@@ -16,6 +17,13 @@ export const errorHandler: ErrorRequestHandler = (error, request, response, _nex
   if (error instanceof ZodError) {
     response.status(422).json({
       error: { code: 'VALIDATION_ERROR', message: 'Revisa los datos enviados.', fields: error.flatten().fieldErrors },
+    });
+    return;
+  }
+
+  if (error instanceof MulterError) {
+    response.status(400).json({
+      error: { code: error.code, message: 'El archivo no es válido o excede el tamaño permitido (máx. 5MB).' },
     });
     return;
   }

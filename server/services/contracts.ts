@@ -30,9 +30,11 @@ export interface AdminService {
   getOverview(auth: AuthContext): Promise<unknown>;
   listOrders(auth: AuthContext): Promise<unknown[]>;
   updateOrder(auth: AuthContext, orderId: string, input: unknown): Promise<unknown>;
+  listProducts(auth: AuthContext): Promise<unknown[]>;
   updateProduct(auth: AuthContext, productId: string, input: unknown): Promise<unknown>;
   createProduct(auth: AuthContext, input: unknown): Promise<unknown>;
   deactivateProduct(auth: AuthContext, productId: string): Promise<void>;
+  uploadProductImage(auth: AuthContext, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<string>;
   listCategories(auth: AuthContext): Promise<unknown[]>;
   createCategory(auth: AuthContext, input: unknown): Promise<unknown>;
   updateCategory(auth: AuthContext, categoryId: string, input: unknown): Promise<unknown>;

@@ -1,9 +1,18 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { HttpError } from '../http/errors.js';
 import { requireAuth, requireCsrf, requireRole } from '../middleware/auth.js';
 import { adminLimit } from '../middleware/limits.js';
 import type { AdminService } from '../services/contracts.js';
 import { adminCategorySchema, adminOrderUpdateSchema, adminProductSchema, adminPromotionSchema } from '../validators/schemas.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    callback(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype));
+  },
+});
 
 const uuid = (value: string) => {
   if (!/^[0-9a-f-]{36}$/i.test(value)) throw new HttpError(404, 'Recurso no encontrado.', 'NOT_FOUND');
@@ -18,6 +27,12 @@ export function adminRoutes(service: AdminService) {
   router.patch('/orders/:id', requireCsrf, async (request, response) => {
     const input = adminOrderUpdateSchema.parse(request.body);
     response.json({ order: await service.updateOrder(request.auth!, uuid(String(request.params.id)), input) });
+  });
+  router.get('/products', async (request, response) => response.json({ products: await service.listProducts(request.auth!) }));
+  router.post('/uploads', requireCsrf, upload.single('file'), async (request, response) => {
+    if (!request.file) throw new HttpError(400, 'Falta una imagen válida (jpeg, png o webp, máx. 5MB).', 'INVALID_FILE');
+    const url = await service.uploadProductImage(request.auth!, request.file);
+    response.status(201).json({ url });
   });
   router.post('/products', requireCsrf, async (request, response) => {
     const input = adminProductSchema.parse(request.body);

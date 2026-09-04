@@ -10,7 +10,7 @@ import type { Services } from '../server/services/contracts.js';
 const customer: AuthContext = { userId: '11111111-1111-4111-8111-111111111111', sessionId: 's1', sessionHash: hashToken('customer-token'), csrfHash: hashToken('csrf-good'), email: 'cliente@example.com', roles: ['customer'], fullName: 'Cliente', emailVerified: true };
 const other: AuthContext = { ...customer, userId: '22222222-2222-4222-8222-222222222222', sessionId: 's2', email: 'otro@example.com' };
 const admin: AuthContext = { ...customer, userId: '33333333-3333-4333-8333-333333333333', sessionId: 's3', roles: ['admin'], email: 'admin@example.com' };
-const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), allowedOrigins: ['http://localhost:3000'] };
+const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), allowedOrigins: ['http://localhost:3000'], adminEmails: [] };
 
 function services(): Services {
   return {
@@ -33,7 +33,8 @@ function services(): Services {
     },
     admin: {
       getOverview: vi.fn(async () => ({ activeProducts: 22 })), listOrders: vi.fn(async () => []),
-      updateOrder: vi.fn(async () => ({})), updateProduct: vi.fn(async () => ({})), createProduct: vi.fn(async () => ({})), deactivateProduct: vi.fn(async () => undefined),
+      updateOrder: vi.fn(async () => ({})), listProducts: vi.fn(async () => []), updateProduct: vi.fn(async () => ({})), createProduct: vi.fn(async () => ({})), deactivateProduct: vi.fn(async () => undefined),
+      uploadProductImage: vi.fn(async () => 'https://example.supabase.co/storage/v1/object/public/product-images/test.webp'),
       listCategories: vi.fn(async () => []), createCategory: vi.fn(async () => ({})), updateCategory: vi.fn(async () => ({})),
       listPromotions: vi.fn(async () => []), createPromotion: vi.fn(async () => ({})), updatePromotion: vi.fn(async () => ({})),
     },
