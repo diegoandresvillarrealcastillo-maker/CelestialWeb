@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type { AppEnv } from '../config/env.js';
-import { withAuthContext } from '../database/pool.js';
+import { inTransaction, setDbContext, withAuthContext } from '../database/pool.js';
 import { HttpError } from '../http/errors.js';
 import { hashToken } from '../security/tokens.js';
 import type { AuthContext } from '../types.js';
@@ -9,6 +9,7 @@ import type { OrderService } from './contracts.js';
 import { getSignedReceiptUrl, uploadPaymentReceipt } from './storage.js';
 
 type OrderInput = {
+  guestEmail?: string;
   items: Array<{ productId: string; quantity: number; selectedOptions: Record<string, string> }>;
   shippingAddress: Record<string, string | undefined>;
   customerNote?: string;
@@ -22,16 +23,19 @@ type TrustedProduct = {
 export class PostgresOrderService implements OrderService {
   constructor(private pool: Pool, private env: AppEnv) {}
 
-  async create(auth: AuthContext, rawInput: unknown) {
-    if (!auth.emailVerified) throw new HttpError(403, 'Verifica tu correo antes de crear un pedido.', 'EMAIL_NOT_VERIFIED');
+  async create(auth: AuthContext | null, rawInput: unknown) {
+    if (auth && !auth.emailVerified) throw new HttpError(403, 'Verifica tu correo antes de crear un pedido.', 'EMAIL_NOT_VERIFIED');
     const input = rawInput as OrderInput;
+    if (!auth && !input.guestEmail) throw new HttpError(422, 'Ingresa tu correo para continuar sin cuenta.', 'GUEST_EMAIL_REQUIRED');
     const keyHash = hashToken(input.idempotencyKey);
+    const userId = auth?.userId ?? null;
 
-    return withAuthContext(this.pool, auth, async (client) => {
+    return inTransaction(this.pool, async (client) => {
+      if (auth) await setDbContext(client, auth);
       const prior = await client.query<{ response_body: unknown }>(
         `SELECT response_body FROM idempotency_keys
-          WHERE key_hash = $1 AND user_id = $2 AND scope = 'create-order' AND expires_at > now()`,
-        [keyHash, auth.userId],
+          WHERE key_hash = $1 AND user_id IS NOT DISTINCT FROM $2 AND scope = 'create-order' AND expires_at > now()`,
+        [keyHash, userId],
       );
       if (prior.rows[0]?.response_body) return prior.rows[0].response_body;
 
@@ -64,9 +68,9 @@ export class PostgresOrderService implements OrderService {
       });
 
       const orderResult = await client.query<{ id: string; order_number: string }>(
-        `INSERT INTO orders (user_id, subtotal_cop, discount_cop, shipping_cop, total_cop, shipping_address, customer_note)
-         VALUES ($1, $2, 0, 0, $2, $3::jsonb, $4) RETURNING id, order_number`,
-        [auth.userId, subtotal, JSON.stringify(input.shippingAddress), input.customerNote ?? null],
+        `INSERT INTO orders (user_id, guest_email, subtotal_cop, discount_cop, shipping_cop, total_cop, shipping_address, customer_note)
+         VALUES ($1, $2, $3, 0, 0, $3, $4::jsonb, $5) RETURNING id, order_number`,
+        [userId, auth ? null : input.guestEmail, subtotal, JSON.stringify(input.shippingAddress), input.customerNote ?? null],
       );
       const order = orderResult.rows[0];
 
@@ -87,7 +91,7 @@ export class PostgresOrderService implements OrderService {
         `INSERT INTO idempotency_keys (key_hash, user_id, scope, response_status, response_body, expires_at)
          VALUES ($1, $2, 'create-order', 201, $3::jsonb, now() + interval '24 hours')
          ON CONFLICT (key_hash) DO NOTHING`,
-        [keyHash, auth.userId, JSON.stringify(response)],
+        [keyHash, userId, JSON.stringify(response)],
       );
       return response;
     });
@@ -133,11 +137,14 @@ export class PostgresOrderService implements OrderService {
     });
   }
 
-  async attachReceipt(auth: AuthContext, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }) {
-    return withAuthContext(this.pool, auth, async (client) => {
+  async attachReceipt(auth: AuthContext | null, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }) {
+    return inTransaction(this.pool, async (client) => {
+      if (auth) await setDbContext(client, auth);
       const orderResult = await client.query<{ id: string; payment_status: string }>(
-        `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
-        [orderId, auth.userId],
+        auth
+          ? `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`
+          : `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id IS NULL LIMIT 1`,
+        auth ? [orderId, auth.userId] : [orderId],
       );
       const order = orderResult.rows[0];
       if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
@@ -150,7 +157,7 @@ export class PostgresOrderService implements OrderService {
          WHERE id = $1 RETURNING id, payment_status AS "paymentStatus", receipt_uploaded_at AS "receiptUploadedAt"`,
         [orderId, receiptPath],
       );
-      await writeAuditLog(client, auth.userId, 'order.receipt_uploaded', 'order', orderId, {});
+      await writeAuditLog(client, auth?.userId ?? null, 'order.receipt_uploaded', 'order', orderId, {});
       return result.rows[0];
     });
   }

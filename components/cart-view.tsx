@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatCop } from '@/data/catalog';
 import { useCart } from './cart-provider';
 
@@ -18,22 +18,35 @@ export function CartView() {
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
   const [receiptStatus, setReceiptStatus] = useState<'idle' | 'uploading' | 'done'>('idle');
   const [receiptMessage, setReceiptMessage] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch(`${apiUrl}/api/auth/me`, { credentials: 'include' })
+      .then((response) => setIsLoggedIn(response.ok))
+      .catch(() => setIsLoggedIn(false));
+  }, []);
 
   async function submitOrder(formData: FormData) {
     setSubmitting(true); setMessage('');
     try {
-      const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, { credentials: 'include' });
-      if (csrfResponse.status === 401) { setMessage('Inicia sesión para confirmar el pedido.'); return; }
-      const { csrfToken } = await csrfResponse.json() as { csrfToken: string };
+      let csrfToken = '';
+      if (isLoggedIn) {
+        const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, { credentials: 'include' });
+        if (csrfResponse.ok) csrfToken = (await csrfResponse.json() as { csrfToken: string }).csrfToken;
+      }
       const response = await fetch(`${apiUrl}/api/orders`, {
         method: 'POST', credentials: 'include',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken, 'idempotency-key': crypto.randomUUID() },
+        headers: {
+          'content-type': 'application/json', 'idempotency-key': crypto.randomUUID(),
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
         body: JSON.stringify({
           items: items.map((item) => ({ productId: item.id, quantity: item.quantity, selectedOptions: item.selectedOptions ?? {} })),
           shippingAddress: {
             fullName: formData.get('fullName'), phone: formData.get('phone'), address: formData.get('address'), city: formData.get('city'),
           },
           customerNote: formData.get('customerNote') || undefined,
+          ...(isLoggedIn ? {} : { guestEmail: formData.get('guestEmail') }),
         }),
       });
       const result = await response.json() as { order?: CreatedOrder; error?: { message?: string } };
@@ -53,12 +66,15 @@ export function CartView() {
     try {
       const file = formData.get('file') as File | null;
       if (!file || !file.size) throw new Error('Selecciona la imagen de tu comprobante.');
-      const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, { credentials: 'include' });
-      const { csrfToken } = await csrfResponse.json() as { csrfToken: string };
+      let csrfToken = '';
+      if (isLoggedIn) {
+        const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, { credentials: 'include' });
+        if (csrfResponse.ok) csrfToken = (await csrfResponse.json() as { csrfToken: string }).csrfToken;
+      }
       const body = new FormData();
       body.append('file', file);
       const response = await fetch(`${apiUrl}/api/orders/${createdOrder.id}/receipt`, {
-        method: 'POST', credentials: 'include', headers: { 'x-csrf-token': csrfToken }, body,
+        method: 'POST', credentials: 'include', headers: csrfToken ? { 'x-csrf-token': csrfToken } : {}, body,
       });
       const result = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible enviar el comprobante.');
@@ -102,7 +118,7 @@ export function CartView() {
   return (
     <div className="cart-layout">
       <section className="cart-lines"><p className="eyebrow"><span /> Tu selección</p><h1>Bolsa de compra</h1>{items.map((item) => <article className="cart-line" key={item.id}><img src={item.image} alt="" /><div><p>Hecho bajo pedido</p><h2>{item.name}</h2>{item.selectedOptions && <small>{Object.values(item.selectedOptions).filter(Boolean).join(' · ')}</small>}<button onClick={() => removeItem(item.id)}>Eliminar</button></div><div className="quantity-control"><button onClick={() => setQuantity(item.id, item.quantity - 1)}>−</button><span>{item.quantity}</span><button onClick={() => setQuantity(item.id, item.quantity + 1)}>+</button></div><b>{formatCop(item.priceCop * item.quantity)}</b></article>)}</section>
-      <aside className="checkout-card"><p className="eyebrow"><span /> Resumen</p><div className="summary-row"><span>Subtotal</span><b>{formatCop(subtotalCop)}</b></div><div className="summary-row"><span>Envío</span><b>Por confirmar</b></div><div className="summary-total"><span>Total parcial</span><b>{formatCop(subtotalCop)}</b></div><p>El total final se recalcula en el servidor con precios vigentes. El envío se confirma según ciudad y peso.</p><form action={submitOrder}><label>Nombre completo<input name="fullName" required minLength={2} maxLength={120} /></label><label>Teléfono<input name="phone" required minLength={7} maxLength={30} /></label><label>Dirección<input name="address" required minLength={5} maxLength={180} /></label><label>Ciudad<input name="city" required minLength={2} maxLength={100} /></label><label>Nota opcional<textarea name="customerNote" maxLength={500} /></label><button className="button button-primary full" disabled={submitting}>{submitting ? 'Confirmando…' : 'Confirmar pedido seguro'}</button></form>{message && <p className="form-message" role="status">{message} {message.includes('Inicia') && <Link href="/cuenta">Ir a mi cuenta</Link>}</p>}</aside>
+      <aside className="checkout-card"><p className="eyebrow"><span /> Resumen</p><div className="summary-row"><span>Subtotal</span><b>{formatCop(subtotalCop)}</b></div><div className="summary-row"><span>Envío</span><b>Por confirmar</b></div><div className="summary-total"><span>Total parcial</span><b>{formatCop(subtotalCop)}</b></div><p>El total final se recalcula en el servidor con precios vigentes. El envío se confirma según ciudad y peso.</p><form action={submitOrder}>{isLoggedIn === false && <label>Correo electrónico<input name="guestEmail" type="email" required maxLength={254} /></label>}<label>Nombre completo<input name="fullName" required minLength={2} maxLength={120} /></label><label>Teléfono<input name="phone" required minLength={7} maxLength={30} /></label><label>Dirección<input name="address" required minLength={5} maxLength={180} /></label><label>Ciudad<input name="city" required minLength={2} maxLength={100} /></label><label>Nota opcional<textarea name="customerNote" maxLength={500} /></label><button className="button button-primary full" disabled={submitting || isLoggedIn === null}>{submitting ? 'Confirmando…' : 'Confirmar pedido seguro'}</button>{isLoggedIn === false && <p className="guest-note">¿Ya tienes cuenta? <Link href="/cuenta">Inicia sesión</Link> para guardar tu historial de pedidos, o continúa como invitado.</p>}</form>{message && <p className="form-message" role="status">{message}</p>}</aside>
     </div>
   );
 }

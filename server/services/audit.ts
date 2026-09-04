@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 
 export async function writeAuditLog(
   client: { query: Pool['query'] },
-  actorUserId: string,
+  actorUserId: string | null,
   action: string,
   resourceType: string,
   resourceId: string,
