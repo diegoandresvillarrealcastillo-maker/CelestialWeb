@@ -51,9 +51,11 @@ export class PostgresAdminService implements AdminService {
     return withAuthContext(this.pool, auth, async (client) => {
       const result = await client.query(
         `SELECT o.id, o.order_number AS "orderNumber", o.status, o.payment_status AS "paymentStatus",
-                o.receipt_path AS "receiptPath", o.total_cop AS "totalCop",
-                o.created_at AS "createdAt", u.email::text, p.full_name AS "customerName"
-           FROM orders o JOIN users u ON u.id = o.user_id LEFT JOIN profiles p ON p.user_id = u.id
+                o.receipt_path AS "receiptPath", o.total_cop AS "totalCop", o.created_at AS "createdAt",
+                COALESCE(u.email::text, o.guest_email::text) AS email,
+                COALESCE(p.full_name, o.shipping_address->>'fullName') AS "customerName",
+                (o.user_id IS NULL) AS "isGuest"
+           FROM orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN profiles p ON p.user_id = u.id
           ORDER BY o.created_at DESC LIMIT 200`,
       );
       return Promise.all(result.rows.map(async ({ receiptPath, ...order }) => ({

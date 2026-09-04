@@ -40,6 +40,7 @@ export const productQuerySchema = z.object({
 }).strict();
 
 export const orderSchema = z.object({
+  guestEmail: email.optional(),
   items: z.array(z.object({
     productId: z.string().min(3).max(80).regex(/^[a-zA-Z0-9-]+$/),
     quantity: z.number().int().min(1).max(99),

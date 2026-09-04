@@ -33,6 +33,11 @@ export const requireCsrf: RequestHandler = (request, _response, next) => {
   next();
 };
 
+export const requireCsrfIfAuthenticated: RequestHandler = (request, response, next) => {
+  if (!request.auth) return next();
+  return requireCsrf(request, response, next);
+};
+
 export const originGuard = (env: AppEnv): RequestHandler => (request, _response, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return next();
   const origin = request.get('origin');
