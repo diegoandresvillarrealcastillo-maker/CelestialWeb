@@ -24,7 +24,9 @@ export class PostgresOrderService implements OrderService {
   constructor(private pool: Pool, private env: AppEnv) {}
 
   async create(auth: AuthContext | null, rawInput: unknown) {
-    if (auth && !auth.emailVerified) throw new HttpError(403, 'Verifica tu correo antes de crear un pedido.', 'EMAIL_NOT_VERIFIED');
+    if (auth && this.env.REQUIRE_EMAIL_VERIFICATION && !auth.emailVerified) {
+      throw new HttpError(403, 'Verifica tu correo antes de crear un pedido.', 'EMAIL_NOT_VERIFIED');
+    }
     const input = rawInput as OrderInput;
     if (!auth && !input.guestEmail) throw new HttpError(422, 'Ingresa tu correo para continuar sin cuenta.', 'GUEST_EMAIL_REQUIRED');
     const keyHash = hashToken(input.idempotencyKey);
