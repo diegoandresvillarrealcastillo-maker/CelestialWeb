@@ -36,7 +36,7 @@ export default function PrivacyPolicyPage() {
       <p>Puedes pedirnos en cualquier momento que corrijamos o eliminemos tu información de cuenta escribiéndonos por WhatsApp o al correo con el que te registraste.</p>
 
       <h2>Contacto</h2>
-      <p>¿Preguntas sobre esta política? Escríbenos por <a href="https://wa.me/573205279249" target="_blank" rel="noreferrer">WhatsApp</a>.</p>
+      <p>¿Preguntas sobre esta política? Escríbenos por <a href="https://wa.me/573112801363?text=Hola%2C%20quiero%20saber%20m%C3%A1s%20acerca%20de%20la%20pol%C3%ADtica%20de%20sus%20datos." target="_blank" rel="noreferrer">WhatsApp</a>.</p>
     </main>
   );
 }
