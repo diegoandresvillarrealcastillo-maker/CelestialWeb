@@ -15,6 +15,7 @@ export const registerSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   phone: z.string().trim().min(7).max(30).regex(/^[+0-9 ()-]+$/).optional(),
   hpVerify: z.string().max(0).optional(),
+  turnstileToken: z.string().max(2000).optional(),
 }).strict();
 
 export const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();

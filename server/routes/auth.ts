@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { AppEnv } from '../config/env.js';
 import { requireAuth, requireCsrf } from '../middleware/auth.js';
 import { loginLimit, recoveryLimit, registerLimit } from '../middleware/limits.js';
+import { verifyTurnstile } from '../middleware/turnstile.js';
 import type { AuthService } from '../services/contracts.js';
 import {
   changePasswordSchema, forgotPasswordSchema, googleAuthSchema, loginSchema, profileSchema,
@@ -22,7 +23,7 @@ export function authRoutes(service: AuthService, env: AppEnv) {
     maxAge: env.SESSION_TTL_HOURS * 60 * 60 * 1000,
   };
 
-  router.post('/register', registerLimit, async (request, response) => {
+  router.post('/register', registerLimit, verifyTurnstile(env), async (request, response) => {
     const input = registerSchema.parse(request.body);
     await service.register(input, meta(request));
     response.status(201).json({ message: 'Si la dirección es válida, recibirás instrucciones para verificarla.' });
