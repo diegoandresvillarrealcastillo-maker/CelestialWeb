@@ -5,7 +5,12 @@ import { formatCop } from '@/data/catalog';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type User = { userId: string; email: string; fullName: string | null; roles: string[]; emailVerified: boolean };
-type Order = { id: string; orderNumber: string; status: string; totalCop: number; createdAt: string };
+type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; receiptUrl: string | null; totalCop: number; createdAt: string };
+
+const paymentStatusLabel: Record<string, string> = {
+  pending: 'Pendiente de pago', pending_verification: 'Pago pendiente de verificación',
+  verified: 'Pago verificado', rejected: 'Pago rechazado',
+};
 
 export function AccountPanel() {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -14,6 +19,8 @@ export function AccountPanel() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reuploadingOrderId, setReuploadingOrderId] = useState<string | null>(null);
+  const [reuploadBusy, setReuploadBusy] = useState(false);
 
   async function loadUser() {
     try {
@@ -44,6 +51,24 @@ export function AccountPanel() {
     finally { setBusy(false); }
   }
 
+  async function reuploadReceipt(orderId: string, formData: FormData) {
+    setReuploadBusy(true);
+    try {
+      const file = formData.get('file') as File | null;
+      if (!file || !file.size) throw new Error('Selecciona la imagen de tu comprobante.');
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch(`${apiUrl}/api/orders/${orderId}/receipt`, { method: 'POST', credentials: 'include', headers: { 'x-csrf-token': csrfToken }, body });
+      const result = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible enviar el comprobante.');
+      setMessage('Comprobante enviado. Tu pago quedó pendiente de verificación.');
+      setReuploadingOrderId(null);
+      await loadUser();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No fue posible enviar el comprobante.');
+    } finally { setReuploadBusy(false); }
+  }
+
   async function logout() {
     try {
       await fetch(`${apiUrl}/api/auth/logout`, { method: 'POST', credentials: 'include', headers: { 'x-csrf-token': csrfToken } });
@@ -68,7 +93,7 @@ export function AccountPanel() {
     } catch { setMessage('No fue posible actualizarla. Intenta de nuevo.'); }
   }
 
-  if (user) return <section className="account-card signed-in wide"><p className="eyebrow"><span /> Mi Celestial</p><h1>Hola, {user.fullName ?? 'qué alegría verte'}</h1><p>{user.email}</p><div className="account-status"><span>Correo</span><b className={user.emailVerified ? 'verified' : ''}>{user.emailVerified ? 'Verificado ✓' : 'Pendiente'}</b></div><div className="account-status"><span>Perfil</span><b>{user.roles.includes('admin') ? 'Administrador' : 'Cliente'}</b></div><details className="account-section"><summary>Editar perfil <span>+</span></summary><form action={updateProfile}><label>Nombre completo<input name="fullName" defaultValue={user.fullName ?? ''} required minLength={2} maxLength={120} /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} /></label><button className="button button-primary">Guardar perfil</button></form></details><details className="account-section"><summary>Cambiar contraseña <span>+</span></summary><form action={changePassword}><label>Contraseña actual<input name="currentPassword" type="password" required /></label><label>Nueva contraseña<input name="newPassword" type="password" required minLength={12} maxLength={128} /></label><button className="button button-primary">Cambiar y cerrar sesiones</button></form></details><div className="order-history"><h2>Mis pedidos</h2>{orders.length ? orders.map((order) => <article key={order.id}><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><b>{order.status}</b><strong>{formatCop(order.totalCop)}</strong></article>) : <p>Aún no tienes pedidos.</p>}</div><a className="button button-primary full" href="/carrito">Ver mi bolsa</a>{user.roles.includes('admin') && <a className="button button-quiet full" href="/admin">Abrir administración</a>}{message && <p className="form-message" role="status">{message}</p>}<button className="logout-button" onClick={logout}>Cerrar sesión</button></section>;
+  if (user) return <section className="account-card signed-in wide"><p className="eyebrow"><span /> Mi Celestial</p><h1>Hola, {user.fullName ?? 'qué alegría verte'}</h1><p>{user.email}</p><div className="account-status"><span>Correo</span><b className={user.emailVerified ? 'verified' : ''}>{user.emailVerified ? 'Verificado ✓' : 'Pendiente'}</b></div><div className="account-status"><span>Perfil</span><b>{user.roles.includes('admin') ? 'Administrador' : 'Cliente'}</b></div><details className="account-section"><summary>Editar perfil <span>+</span></summary><form action={updateProfile}><label>Nombre completo<input name="fullName" defaultValue={user.fullName ?? ''} required minLength={2} maxLength={120} /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} /></label><button className="button button-primary">Guardar perfil</button></form></details><details className="account-section"><summary>Cambiar contraseña <span>+</span></summary><form action={changePassword}><label>Contraseña actual<input name="currentPassword" type="password" required /></label><label>Nueva contraseña<input name="newPassword" type="password" required minLength={12} maxLength={128} /></label><button className="button button-primary">Cambiar y cerrar sesiones</button></form></details><div className="order-history"><h2>Mis pedidos</h2>{orders.length ? orders.map((order) => <article key={order.id} className="order-history-line"><div className="order-history-row"><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><b>{order.status}</b><strong>{formatCop(order.totalCop)}</strong></div><div className="order-payment-row"><span className={`payment-badge payment-${order.paymentStatus}`}>{paymentStatusLabel[order.paymentStatus] ?? order.paymentStatus}</span>{order.receiptUrl && <a href={order.receiptUrl} target="_blank" rel="noreferrer">Ver comprobante</a>}{order.paymentStatus === 'rejected' && (reuploadingOrderId === order.id ? <form action={(formData) => reuploadReceipt(order.id, formData)}><input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /><button className="button button-primary" disabled={reuploadBusy}>{reuploadBusy ? 'Enviando…' : 'Enviar'}</button></form> : <button onClick={() => setReuploadingOrderId(order.id)}>Volver a cargar comprobante</button>)}</div></article>) : <p>Aún no tienes pedidos.</p>}</div><a className="button button-primary full" href="/carrito">Ver mi bolsa</a>{user.roles.includes('admin') && <a className="button button-quiet full" href="/admin">Abrir administración</a>}{message && <p className="form-message" role="status">{message}</p>}<button className="logout-button" onClick={logout}>Cerrar sesión</button></section>;
 
   return <section className="account-card"><p className="eyebrow"><span /> Mi Celestial</p><h1>{mode === 'login' ? 'Vuelve a tu espacio' : mode === 'register' ? 'Crea tu cuenta' : 'Recupera tu acceso'}</h1><p>{mode === 'forgot' ? 'Te enviaremos un enlace de un solo uso.' : 'Guarda tus pedidos y continúa tu experiencia.'}</p><div className="account-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Ingresar</button><button className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>Crear cuenta</button></div><form action={submit}>{mode === 'register' && <><label>Nombre completo<input name="fullName" required minLength={2} maxLength={120} autoComplete="name" /></label><label>Teléfono<input name="phone" minLength={7} maxLength={30} autoComplete="tel" /></label></>}<label>Correo electrónico<input name="email" type="email" required maxLength={254} autoComplete="email" /></label>{mode !== 'forgot' && <label>Contraseña<input name="password" type="password" required minLength={mode === 'register' ? 12 : 1} maxLength={128} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} /></label>}{mode !== 'login' && <input className="honeypot" name="hpVerify" tabIndex={-1} autoComplete="off" data-lpignore="true" data-1p-ignore="true" aria-hidden="true" />}<button className="button button-primary full" disabled={busy}>{busy ? 'Procesando…' : mode === 'login' ? 'Ingresar de forma segura' : mode === 'register' ? 'Crear mi cuenta' : 'Enviar enlace'}</button></form>{mode === 'login' && <button className="forgot-link" onClick={() => setMode('forgot')}>Olvidé mi contraseña</button>}{mode === 'forgot' && <button className="forgot-link" onClick={() => setMode('login')}>Volver al ingreso</button>}{message && <p className="form-message" role="status">{message}</p>}</section>;
 }

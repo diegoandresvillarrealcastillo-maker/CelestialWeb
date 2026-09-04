@@ -1,18 +1,10 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { HttpError } from '../http/errors.js';
 import { requireAuth, requireCsrf, requireRole } from '../middleware/auth.js';
 import { adminLimit } from '../middleware/limits.js';
+import { imageUpload as upload } from '../middleware/upload.js';
 import type { AdminService } from '../services/contracts.js';
-import { adminCategorySchema, adminOrderUpdateSchema, adminProductSchema, adminPromotionSchema } from '../validators/schemas.js';
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_request, file, callback) => {
-    callback(null, ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype));
-  },
-});
+import { adminOrderUpdateSchema, adminPaymentDecisionSchema, adminProductSchema, adminCategorySchema, adminPromotionSchema, paymentSettingsSchema } from '../validators/schemas.js';
 
 const uuid = (value: string) => {
   if (!/^[0-9a-f-]{36}$/i.test(value)) throw new HttpError(404, 'Recurso no encontrado.', 'NOT_FOUND');
@@ -27,6 +19,14 @@ export function adminRoutes(service: AdminService) {
   router.patch('/orders/:id', requireCsrf, async (request, response) => {
     const input = adminOrderUpdateSchema.parse(request.body);
     response.json({ order: await service.updateOrder(request.auth!, uuid(String(request.params.id)), input) });
+  });
+  router.patch('/orders/:id/payment', requireCsrf, async (request, response) => {
+    const { decision } = adminPaymentDecisionSchema.parse(request.body);
+    response.json({ order: await service.decidePayment(request.auth!, uuid(String(request.params.id)), decision) });
+  });
+  router.put('/payment-settings', requireCsrf, async (request, response) => {
+    const input = paymentSettingsSchema.parse(request.body);
+    response.json({ settings: await service.updatePaymentSettings(request.auth!, input) });
   });
   router.get('/products', async (request, response) => response.json({ products: await service.listProducts(request.auth!) }));
   router.post('/uploads', requireCsrf, upload.single('file'), async (request, response) => {

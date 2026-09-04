@@ -5,17 +5,23 @@ import { useEffect, useState } from 'react';
 import { formatCop } from '@/data/catalog';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-type Tab = 'overview' | 'products' | 'orders' | 'categories' | 'promotions';
+type Tab = 'overview' | 'products' | 'orders' | 'categories' | 'promotions' | 'payment-settings';
 type Product = {
   id: string; slug: string; name: string; description: string; priceCop: number;
   priceMaxCop?: number | null; priceLabel?: string | null; image: string;
   dimensions?: string | null; weight?: string | null; availability: string;
   collection: 'general' | 'navidad'; active: boolean; categories: string[];
 };
-type Order = { id: string; orderNumber: string; status: string; totalCop: number; email: string; customerName?: string; createdAt: string };
+type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; receiptUrl: string | null; totalCop: number; email: string; customerName?: string; createdAt: string };
+type PaymentSettings = { bankKey: string | null; accountHolder: string | null; qrImageUrl: string | null; instructions: string | null };
+
+const paymentStatusLabel: Record<string, string> = {
+  pending: 'Pendiente de pago', pending_verification: 'Pago pendiente de verificación',
+  verified: 'Pago verificado', rejected: 'Pago rechazado',
+};
 type Category = { id: string; slug: string; name: string; description?: string | null; active: boolean; sortOrder: number };
 type Promotion = { id: string; name: string; code?: string | null; kind: 'percentage' | 'fixed' | 'bundle'; configuration: Record<string, string | number | boolean>; active: boolean };
-type Overview = { activeProducts: number; pendingOrders: number; customers: number; confirmedRevenueCop: number };
+type Overview = { activeProducts: number; pendingOrders: number; pendingPaymentVerification: number; customers: number; confirmedRevenueCop: number };
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -26,6 +32,7 @@ export function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
   const [message, setMessage] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -39,14 +46,15 @@ export function AdminDashboard() {
     setAuthorized(true);
     const csrfResponse = await fetch(`${apiUrl}/api/auth/csrf`, options);
     setCsrf((await csrfResponse.json() as { csrfToken: string }).csrfToken);
-    const [stats, productData, orderData, categoryData, promotionData] = await Promise.all([
+    const [stats, productData, orderData, categoryData, promotionData, paymentSettingsData] = await Promise.all([
       fetch(`${apiUrl}/api/admin/overview`, options).then((response) => response.json()) as Promise<{ overview: Overview }>,
       fetch(`${apiUrl}/api/admin/products`, options).then((response) => response.json()) as Promise<{ products: Product[] }>,
       fetch(`${apiUrl}/api/admin/orders`, options).then((response) => response.json()) as Promise<{ orders: Order[] }>,
       fetch(`${apiUrl}/api/admin/categories`, options).then((response) => response.json()) as Promise<{ categories: Category[] }>,
       fetch(`${apiUrl}/api/admin/promotions`, options).then((response) => response.json()) as Promise<{ promotions: Promotion[] }>,
+      fetch(`${apiUrl}/api/payment-settings`, options).then((response) => response.json()) as Promise<{ settings: PaymentSettings | null }>,
     ]);
-    setOverview(stats.overview); setProducts(productData.products); setOrders(orderData.orders); setCategories(categoryData.categories); setPromotions(promotionData.promotions);
+    setOverview(stats.overview); setProducts(productData.products); setOrders(orderData.orders); setCategories(categoryData.categories); setPromotions(promotionData.promotions); setPaymentSettings(paymentSettingsData.settings);
   }
 
   async function mutate(path: string, method: string, body?: object) {
@@ -96,11 +104,30 @@ export function AdminDashboard() {
     }
   }
 
+  async function submitPaymentSettings(formData: FormData) {
+    try {
+      const qrFile = formData.get('qrImage') as File | null;
+      const qrImageUrl = qrFile && qrFile.size > 0 ? await uploadImage(qrFile) : paymentSettings?.qrImageUrl ?? undefined;
+      await mutate('/api/admin/payment-settings', 'PUT', {
+        bankKey: formData.get('bankKey') || null,
+        accountHolder: formData.get('accountHolder') || null,
+        instructions: formData.get('instructions') || null,
+        ...(qrImageUrl ? { qrImageUrl } : {}),
+      });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Error');
+    }
+  }
+
+  function decidePayment(orderId: string, decision: 'verified' | 'rejected') {
+    void mutate(`/api/admin/orders/${orderId}/payment`, 'PATCH', { decision }).catch((error) => setMessage(error.message));
+  }
+
   if (authorized === null) return <main className="admin-loading">Verificando acceso…</main>;
   if (!authorized) return <main className="admin-loading"><h1>Acceso administrativo</h1><p>Esta sección exige una sesión con rol de administrador validado por el servidor.</p><Link className="button button-primary" href="/cuenta">Ir a mi cuenta</Link></main>;
 
-  return <main className="admin-shell"><aside className="admin-nav"><div><small>CELESTIAL</small><b>Administración</b></div>{(['overview', 'products', 'orders', 'categories', 'promotions'] as Tab[]).map((item) => <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones' } as Record<Tab, string>)[item]}</button>)}<Link href="/">← Volver a la tienda</Link></aside><section className="admin-main"><header><div><p>Panel seguro</p><h1>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones' } as Record<Tab, string>)[tab]}</h1></div><span>Rol: Administrador</span></header>{message && <p className="admin-message" role="status">{message}</p>}
-    {tab === 'overview' && overview && <div className="stat-grid"><article><span>Productos activos</span><b>{overview.activeProducts}</b></article><article><span>Pedidos pendientes</span><b>{overview.pendingOrders}</b></article><article><span>Clientes</span><b>{overview.customers}</b></article><article><span>Ventas confirmadas</span><b>{formatCop(overview.confirmedRevenueCop)}</b></article></div>}
+  return <main className="admin-shell"><aside className="admin-nav"><div><small>CELESTIAL</small><b>Administración</b></div>{(['overview', 'products', 'orders', 'categories', 'promotions', 'payment-settings'] as Tab[]).map((item) => <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones', 'payment-settings': 'Pagos' } as Record<Tab, string>)[item]}</button>)}<Link href="/">← Volver a la tienda</Link></aside><section className="admin-main"><header><div><p>Panel seguro</p><h1>{({ overview: 'Resumen', products: 'Productos', orders: 'Pedidos', categories: 'Categorías', promotions: 'Promociones', 'payment-settings': 'Pagos' } as Record<Tab, string>)[tab]}</h1></div><span>Rol: Administrador</span></header>{message && <p className="admin-message" role="status">{message}</p>}
+    {tab === 'overview' && overview && <div className="stat-grid"><article><span>Productos activos</span><b>{overview.activeProducts}</b></article><article><span>Pedidos pendientes</span><b>{overview.pendingOrders}</b></article><article><span>Pagos pendientes de verificación</span><b>{overview.pendingPaymentVerification}</b></article><article><span>Clientes</span><b>{overview.customers}</b></article><article><span>Ventas confirmadas</span><b>{formatCop(overview.confirmedRevenueCop)}</b></article></div>}
     {tab === 'products' && <>
       <form className="admin-form inline-form" key={editingProduct?.id ?? 'new'} action={submitProduct}>
         <h2>{editingProduct ? `Editar: ${editingProduct.name}` : 'Nuevo producto'}</h2>
@@ -144,7 +171,19 @@ export function AdminDashboard() {
         </div>)}
       </div>
     </>}
-    {tab === 'orders' && <div className="admin-table"><div className="admin-row order admin-head"><span>Pedido</span><span>Cliente</span><span>Total</span><span>Estado</span></div>{orders.map((order) => <div className="admin-row order" key={order.id}><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><span>{order.customerName ?? order.email}<small>{order.email}</small></span><b>{formatCop(order.totalCop)}</b><select value={order.status} onChange={(event) => void mutate(`/api/admin/orders/${order.id}`, 'PATCH', { status: event.target.value }).catch((error) => setMessage(error.message))}>{['pending','confirmed','preparing','shipped','completed','cancelled'].map((status) => <option value={status} key={status}>{status}</option>)}</select></div>)}</div>}
+    {tab === 'orders' && <div className="admin-table"><div className="admin-row order admin-head"><span>Pedido</span><span>Cliente</span><span>Total</span><span>Estado</span></div>{orders.map((order) => <div className="admin-order-block" key={order.id}><div className="admin-row order"><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><span>{order.customerName ?? order.email}<small>{order.email}</small></span><b>{formatCop(order.totalCop)}</b><select value={order.status} onChange={(event) => void mutate(`/api/admin/orders/${order.id}`, 'PATCH', { status: event.target.value }).catch((error) => setMessage(error.message))}>{['pending','confirmed','preparing','shipped','completed','cancelled'].map((status) => <option value={status} key={status}>{status}</option>)}</select></div><div className="order-payment-row"><span className={`payment-badge payment-${order.paymentStatus}`}>{paymentStatusLabel[order.paymentStatus] ?? order.paymentStatus}</span>{order.receiptUrl && <a href={order.receiptUrl} target="_blank" rel="noreferrer">Ver comprobante</a>}{order.paymentStatus === 'pending_verification' && <><button onClick={() => decidePayment(order.id, 'verified')}>Aprobar pago</button><button onClick={() => decidePayment(order.id, 'rejected')}>Rechazar pago</button></>}</div></div>)}</div>}
+    {tab === 'payment-settings' && <form className="admin-form inline-form small" action={submitPaymentSettings}>
+      <h2>Configuración de pago por transferencia</h2>
+      <input name="bankKey" placeholder="Llave / número de cuenta" defaultValue={paymentSettings?.bankKey ?? ''} />
+      <input name="accountHolder" placeholder="A nombre de" defaultValue={paymentSettings?.accountHolder ?? ''} />
+      <textarea name="instructions" placeholder="Instrucciones para el cliente" defaultValue={paymentSettings?.instructions ?? ''} />
+      <label className="image-field">
+        <span>Código QR {paymentSettings?.qrImageUrl ? '(deja vacío para conservar el actual)' : ''}</span>
+        {paymentSettings?.qrImageUrl && <img src={paymentSettings.qrImageUrl} alt="" className="image-preview" />}
+        <input name="qrImage" type="file" accept="image/jpeg,image/png,image/webp" />
+      </label>
+      <button>Guardar configuración</button>
+    </form>}
     {tab === 'categories' && <><form className="admin-form inline-form small" action={async (formData) => { try { await mutate('/api/admin/categories', 'POST', { slug: formData.get('slug'), name: formData.get('name'), description: null, active: true, sortOrder: Number(formData.get('sortOrder')) }); } catch (error) { setMessage(error instanceof Error ? error.message : 'Error'); } }}><h2>Nueva categoría</h2><input name="name" placeholder="Nombre" required /><input name="slug" placeholder="slug" required /><input name="sortOrder" type="number" min="0" defaultValue="0" /><button>Crear</button></form><div className="admin-table">{categories.map((category) => <div className="admin-row" key={category.id}><span><b>{category.name}</b><small>{category.slug}</small></span><span>Orden {category.sortOrder}</span><button onClick={() => void mutate(`/api/admin/categories/${category.id}`, 'PUT', { slug: category.slug, name: category.name, description: category.description ?? null, active: !category.active, sortOrder: category.sortOrder }).catch((error) => setMessage(error.message))}>{category.active ? 'Desactivar' : 'Activar'}</button></div>)}</div></>}
     {tab === 'promotions' && <><form className="admin-form inline-form small" action={async (formData) => { try { const kind = String(formData.get('kind')); await mutate('/api/admin/promotions', 'POST', { name: formData.get('name'), code: formData.get('code') || null, kind, configuration: { value: Number(formData.get('value')) }, active: false }); } catch (error) { setMessage(error instanceof Error ? error.message : 'Error'); } }}><h2>Nueva promoción</h2><input name="name" placeholder="Nombre" required /><input name="code" placeholder="Código opcional" /><select name="kind"><option value="percentage">Porcentaje</option><option value="fixed">Valor fijo</option><option value="bundle">Bundle</option></select><input name="value" type="number" min="0" placeholder="Valor" required /><button>Crear inactiva</button></form><div className="admin-table">{promotions.map((promotion) => <div className="admin-row" key={promotion.id}><span><b>{promotion.name}</b><small>{promotion.code ?? 'Sin código'} · {promotion.kind}</small></span><span>{String(promotion.configuration.value ?? '')}</span><button onClick={() => void mutate(`/api/admin/promotions/${promotion.id}`, 'PUT', { name: promotion.name, code: promotion.code ?? null, kind: promotion.kind, configuration: promotion.configuration, active: !promotion.active, startsAt: null, endsAt: null }).catch((error) => setMessage(error.message))}>{promotion.active ? 'Pausar' : 'Activar'}</button></div>)}</div></>}
   </section></main>;

@@ -3,8 +3,9 @@ import type { Pool } from 'pg';
 import type { AppEnv } from '../config/env.js';
 import { withAuthContext } from '../database/pool.js';
 import { HttpError } from '../http/errors.js';
+import { writeAuditLog } from './audit.js';
 import { selectProduct } from './product-service.js';
-import { uploadProductImage as uploadToStorage } from './storage.js';
+import { getSignedReceiptUrl, uploadProductImage as uploadToStorage } from './storage.js';
 import type { AuthContext } from '../types.js';
 import type { AdminService } from './contracts.js';
 
@@ -38,6 +39,7 @@ export class PostgresAdminService implements AdminService {
         `SELECT
           (SELECT count(*)::int FROM products WHERE active) AS "activeProducts",
           (SELECT count(*)::int FROM orders WHERE status = 'pending') AS "pendingOrders",
+          (SELECT count(*)::int FROM orders WHERE payment_status = 'pending_verification') AS "pendingPaymentVerification",
           (SELECT count(*)::int FROM users WHERE status = 'active') AS customers,
           (SELECT COALESCE(sum(total_cop), 0)::int FROM orders WHERE status IN ('confirmed','preparing','shipped','completed')) AS "confirmedRevenueCop"`,
       );
@@ -48,12 +50,50 @@ export class PostgresAdminService implements AdminService {
   async listOrders(auth: AuthContext) {
     return withAuthContext(this.pool, auth, async (client) => {
       const result = await client.query(
-        `SELECT o.id, o.order_number AS "orderNumber", o.status, o.total_cop AS "totalCop",
+        `SELECT o.id, o.order_number AS "orderNumber", o.status, o.payment_status AS "paymentStatus",
+                o.receipt_path AS "receiptPath", o.total_cop AS "totalCop",
                 o.created_at AS "createdAt", u.email::text, p.full_name AS "customerName"
            FROM orders o JOIN users u ON u.id = o.user_id LEFT JOIN profiles p ON p.user_id = u.id
           ORDER BY o.created_at DESC LIMIT 200`,
       );
-      return result.rows;
+      return Promise.all(result.rows.map(async ({ receiptPath, ...order }) => ({
+        ...order,
+        receiptUrl: receiptPath ? await getSignedReceiptUrl(this.env, receiptPath) : null,
+      })));
+    });
+  }
+
+  async decidePayment(auth: AuthContext, orderId: string, decision: 'verified' | 'rejected') {
+    return withAuthContext(this.pool, auth, async (client) => {
+      const result = await client.query(
+        `UPDATE orders SET payment_status = $2 WHERE id = $1 AND payment_status = 'pending_verification'
+         RETURNING id, payment_status AS "paymentStatus"`,
+        [orderId, decision],
+      );
+      if (!result.rows[0]) throw new HttpError(404, 'Pedido no encontrado o sin comprobante pendiente de revisión.', 'NOT_FOUND');
+      await this.audit(client, auth, `order.payment_${decision}`, 'order', orderId, {});
+      return result.rows[0];
+    });
+  }
+
+  async getPaymentSettings() {
+    const result = await this.pool.query(
+      `SELECT bank_key AS "bankKey", account_holder AS "accountHolder", qr_image_url AS "qrImageUrl", instructions
+         FROM payment_settings WHERE id = true LIMIT 1`,
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async updatePaymentSettings(auth: AuthContext, rawInput: unknown) {
+    const input = rawInput as { bankKey?: string | null; accountHolder?: string | null; qrImageUrl?: string | null; instructions?: string | null };
+    return withAuthContext(this.pool, auth, async (client) => {
+      const result = await client.query(
+        `UPDATE payment_settings SET bank_key = $1, account_holder = $2, qr_image_url = $3, instructions = $4 WHERE id = true
+         RETURNING bank_key AS "bankKey", account_holder AS "accountHolder", qr_image_url AS "qrImageUrl", instructions`,
+        [input.bankKey ?? null, input.accountHolder ?? null, input.qrImageUrl ?? null, input.instructions ?? null],
+      );
+      await this.audit(client, auth, 'payment_settings.updated', 'payment_settings', 'singleton', {});
+      return result.rows[0];
     });
   }
 
@@ -202,9 +242,6 @@ export class PostgresAdminService implements AdminService {
   }
 
   private async audit(client: { query: Pool['query'] }, auth: AuthContext, action: string, resourceType: string, resourceId: string, metadata: object) {
-    await client.query(
-      'INSERT INTO audit_logs (actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1, $2, $3, $4, $5::jsonb)',
-      [auth.userId, action, resourceType, resourceId, JSON.stringify(metadata)],
-    );
+    await writeAuditLog(client, auth.userId, action, resourceType, resourceId, metadata);
   }
 }

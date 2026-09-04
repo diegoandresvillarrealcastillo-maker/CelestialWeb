@@ -24,6 +24,7 @@ export interface OrderService {
   create(auth: AuthContext, input: unknown): Promise<unknown>;
   list(auth: AuthContext): Promise<unknown[]>;
   get(auth: AuthContext, orderId: string): Promise<unknown | null>;
+  attachReceipt(auth: AuthContext, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<unknown>;
 }
 
 export interface AdminService {
@@ -35,6 +36,9 @@ export interface AdminService {
   createProduct(auth: AuthContext, input: unknown): Promise<unknown>;
   deactivateProduct(auth: AuthContext, productId: string): Promise<void>;
   uploadProductImage(auth: AuthContext, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<string>;
+  decidePayment(auth: AuthContext, orderId: string, decision: 'verified' | 'rejected'): Promise<unknown>;
+  getPaymentSettings(): Promise<unknown>;
+  updatePaymentSettings(auth: AuthContext, input: unknown): Promise<unknown>;
   listCategories(auth: AuthContext): Promise<unknown[]>;
   createCategory(auth: AuthContext, input: unknown): Promise<unknown>;
   updateCategory(auth: AuthContext, categoryId: string, input: unknown): Promise<unknown>;

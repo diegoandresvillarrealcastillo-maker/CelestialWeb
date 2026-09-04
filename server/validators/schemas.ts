@@ -83,6 +83,19 @@ export const adminOrderUpdateSchema = z.object({
   status: z.enum(['pending', 'confirmed', 'preparing', 'shipped', 'completed', 'cancelled']),
 }).strict();
 
+export const adminPaymentDecisionSchema = z.object({
+  decision: z.enum(['verified', 'rejected']),
+}).strict();
+
+export const paymentSettingsSchema = z.object({
+  bankKey: z.string().trim().max(200).nullable().optional(),
+  accountHolder: z.string().trim().max(200).nullable().optional(),
+  qrImageUrl: z.string().trim().max(500)
+    .regex(/^\/images\/[a-zA-Z0-9_./-]+$|^https:\/\/[a-zA-Z0-9.-]+\.supabase\.co\/storage\/v1\/object\/public\/[a-zA-Z0-9_./-]+$/)
+    .nullable().optional(),
+  instructions: z.string().trim().max(1000).nullable().optional(),
+}).strict();
+
 export const adminCategorySchema = z.object({
   slug: z.string().trim().min(2).max(90).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   name: z.string().trim().min(2).max(100),
