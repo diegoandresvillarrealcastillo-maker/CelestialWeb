@@ -10,7 +10,7 @@ import type { Services } from '../server/services/contracts.js';
 const customer: AuthContext = { userId: '11111111-1111-4111-8111-111111111111', sessionId: 's1', sessionHash: hashToken('customer-token'), csrfHash: hashToken('csrf-good'), email: 'cliente@example.com', roles: ['customer'], fullName: 'Cliente', emailVerified: true };
 const other: AuthContext = { ...customer, userId: '22222222-2222-4222-8222-222222222222', sessionId: 's2', email: 'otro@example.com' };
 const admin: AuthContext = { ...customer, userId: '33333333-3333-4333-8333-333333333333', sessionId: 's3', roles: ['admin'], email: 'admin@example.com' };
-const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), allowedOrigins: ['http://localhost:3000'], adminEmails: [] };
+const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), allowedOrigins: ['http://localhost:3000'], adminEmails: [], REQUIRE_EMAIL_VERIFICATION: false };
 
 function services(): Services {
   return {

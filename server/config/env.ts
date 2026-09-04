@@ -20,6 +20,7 @@ const envSchema = z.object({
   PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
   APP_ENCRYPTION_KEY: z.string().min(32).optional(),
   ADMIN_EMAILS: z.string().optional(),
+  REQUIRE_EMAIL_VERIFICATION: booleanString.default(false),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
 });
