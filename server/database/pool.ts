@@ -8,7 +8,9 @@ export function createPool(env: AppEnv) {
     max: 12,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: true } : undefined,
+    ssl: env.DATABASE_SSL
+      ? { rejectUnauthorized: true, ...(env.DATABASE_CA_CERT ? { ca: env.DATABASE_CA_CERT } : {}) }
+      : undefined,
     application_name: 'celestial-api',
   });
 }
