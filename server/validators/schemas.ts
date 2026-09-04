@@ -18,6 +18,7 @@ export const registerSchema = z.object({
 }).strict();
 
 export const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
+export const googleAuthSchema = z.object({ idToken: z.string().min(20).max(4000) }).strict();
 export const forgotPasswordSchema = z.object({ email, hpVerify: z.string().max(0).optional() }).strict();
 export const resetPasswordSchema = z.object({ token: z.string().min(32).max(200), password }).strict();
 export const verifyEmailSchema = z.object({ token: z.string().min(32).max(200) }).strict();

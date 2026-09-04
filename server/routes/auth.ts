@@ -4,7 +4,7 @@ import { requireAuth, requireCsrf } from '../middleware/auth.js';
 import { loginLimit, recoveryLimit, registerLimit } from '../middleware/limits.js';
 import type { AuthService } from '../services/contracts.js';
 import {
-  changePasswordSchema, forgotPasswordSchema, loginSchema, profileSchema,
+  changePasswordSchema, forgotPasswordSchema, googleAuthSchema, loginSchema, profileSchema,
   registerSchema, resetPasswordSchema, verifyEmailSchema,
 } from '../validators/schemas.js';
 
@@ -31,6 +31,13 @@ export function authRoutes(service: AuthService, env: AppEnv) {
   router.post('/login', loginLimit, async (request, response) => {
     const input = loginSchema.parse(request.body);
     const result = await service.login(input, meta(request));
+    response.cookie(env.SESSION_COOKIE_NAME, result.token, cookieOptions);
+    response.json({ user: result.user, csrfToken: result.csrfToken });
+  });
+
+  router.post('/google', loginLimit, async (request, response) => {
+    const input = googleAuthSchema.parse(request.body);
+    const result = await service.loginWithGoogle(input.idToken, meta(request));
     response.cookie(env.SESSION_COOKIE_NAME, result.token, cookieOptions);
     response.json({ user: result.user, csrfToken: result.csrfToken });
   });

@@ -6,6 +6,7 @@ export interface AuthService {
   getSession(rawToken: string): Promise<AuthContext | null>;
   register(input: { email: string; password: string; fullName: string; phone?: string }, meta: RequestMeta): Promise<void>;
   login(input: { email: string; password: string }, meta: RequestMeta): Promise<SessionResult>;
+  loginWithGoogle(idToken: string, meta: RequestMeta): Promise<SessionResult>;
   logout(auth: AuthContext): Promise<void>;
   rotateCsrf(auth: AuthContext): Promise<string>;
   forgotPassword(email: string, meta: RequestMeta): Promise<void>;
