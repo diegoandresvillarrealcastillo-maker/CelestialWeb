@@ -14,11 +14,11 @@ export const registerSchema = z.object({
   password,
   fullName: z.string().trim().min(2).max(120),
   phone: z.string().trim().min(7).max(30).regex(/^[+0-9 ()-]+$/).optional(),
-  company: z.string().max(0).optional(),
+  hpVerify: z.string().max(0).optional(),
 }).strict();
 
 export const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
-export const forgotPasswordSchema = z.object({ email, company: z.string().max(0).optional() }).strict();
+export const forgotPasswordSchema = z.object({ email, hpVerify: z.string().max(0).optional() }).strict();
 export const resetPasswordSchema = z.object({ token: z.string().min(32).max(200), password }).strict();
 export const verifyEmailSchema = z.object({ token: z.string().min(32).max(200) }).strict();
 export const changePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }).strict();
