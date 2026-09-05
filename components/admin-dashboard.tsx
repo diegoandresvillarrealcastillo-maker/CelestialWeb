@@ -10,7 +10,7 @@ type Product = {
   id: string; slug: string; name: string; description: string; priceCop: number;
   priceMaxCop?: number | null; priceLabel?: string | null; image: string;
   dimensions?: string | null; weight?: string | null; availability: string;
-  collection: 'general' | 'navidad'; active: boolean; categories: string[];
+  active: boolean; categories: string[];
 };
 type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; receiptUrl: string | null; totalCop: number; email: string; customerName?: string; isGuest: boolean; createdAt: string };
 type PaymentSettings = { bankKey: string | null; accountHolder: string | null; qrImageUrl: string | null; instructions: string | null };
@@ -19,6 +19,16 @@ const paymentStatusLabel: Record<string, string> = {
   pending: 'Pendiente de pago', pending_verification: 'Pago pendiente de verificación',
   verified: 'Pago verificado', rejected: 'Pago rechazado',
 };
+type OrderView = 'verify' | 'shipping' | 'completed' | 'cancelled';
+const orderViewLabel: Record<OrderView, string> = {
+  verify: 'Por verificar', shipping: 'Pendientes de envío', completed: 'Completados', cancelled: 'Cancelados',
+};
+function orderBucket(order: Order): OrderView {
+  if (order.status === 'cancelled') return 'cancelled';
+  if (order.status === 'completed') return 'completed';
+  if (order.paymentStatus === 'verified') return 'shipping';
+  return 'verify';
+}
 type Category = { id: string; slug: string; name: string; description?: string | null; active: boolean; sortOrder: number };
 type Promotion = { id: string; name: string; code?: string | null; kind: 'percentage' | 'fixed' | 'bundle'; configuration: Record<string, string | number | boolean>; active: boolean };
 type Overview = { activeProducts: number; pendingOrders: number; pendingPaymentVerification: number; customers: number; confirmedRevenueCop: number };
@@ -35,6 +45,7 @@ export function AdminDashboard() {
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
   const [message, setMessage] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [orderView, setOrderView] = useState<OrderView>('verify');
 
   useEffect(() => { void load(); }, []);
   async function load() {
@@ -89,7 +100,6 @@ export function AdminDashboard() {
         availability: formData.get('availability') || 'Hecho bajo pedido',
         dimensions: formData.get('dimensions') || null,
         weight: formData.get('weight') || null,
-        collection: formData.get('collection'),
         categoryId: formData.get('categoryId') || undefined,
         ...(imagePath ? { imagePath } : {}),
       };
@@ -139,7 +149,6 @@ export function AdminDashboard() {
         <input name="availability" placeholder="Disponibilidad" defaultValue={editingProduct?.availability ?? 'Hecho bajo pedido'} />
         <input name="dimensions" placeholder="Medidas (opcional)" defaultValue={editingProduct?.dimensions ?? ''} />
         <input name="weight" placeholder="Peso (opcional)" defaultValue={editingProduct?.weight ?? ''} />
-        <select name="collection" defaultValue={editingProduct?.collection ?? 'general'}><option value="general">General</option><option value="navidad">Navidad</option></select>
         <select name="categoryId" required defaultValue={categories.find((item) => item.name === editingProduct?.categories[0])?.id ?? ''}>
           <option value="">Categoría</option>{categories.filter((item) => item.active).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
         </select>
@@ -171,7 +180,19 @@ export function AdminDashboard() {
         </div>)}
       </div>
     </>}
-    {tab === 'orders' && <div className="admin-table"><div className="admin-row order admin-head"><span>Pedido</span><span>Cliente</span><span>Total</span><span>Estado</span></div>{orders.map((order) => <div className="admin-order-block" key={order.id}><div className="admin-row order"><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><span>{order.customerName ?? order.email}{order.isGuest && <em className="guest-tag"> · Invitado</em>}<small>{order.email}</small></span><b>{formatCop(order.totalCop)}</b><select value={order.status} onChange={(event) => void mutate(`/api/admin/orders/${order.id}`, 'PATCH', { status: event.target.value }).catch((error) => setMessage(error.message))}>{['pending','confirmed','preparing','shipped','completed','cancelled'].map((status) => <option value={status} key={status}>{status}</option>)}</select></div><div className="order-payment-row"><span className={`payment-badge payment-${order.paymentStatus}`}>{paymentStatusLabel[order.paymentStatus] ?? order.paymentStatus}</span>{order.receiptUrl && <a href={order.receiptUrl} target="_blank" rel="noreferrer">Ver comprobante</a>}{order.paymentStatus === 'pending_verification' && <><button onClick={() => decidePayment(order.id, 'verified')}>Aprobar pago</button><button onClick={() => decidePayment(order.id, 'rejected')}>Rechazar pago</button></>}</div></div>)}</div>}
+    {tab === 'orders' && <>
+      <div className="order-status-tabs">
+        {(['verify', 'shipping', 'completed', 'cancelled'] as OrderView[]).map((view) => {
+          const count = orders.filter((order) => orderBucket(order) === view).length;
+          return <button key={view} className={orderView === view ? 'active' : ''} onClick={() => setOrderView(view)}>{orderViewLabel[view]}<b>{count}</b></button>;
+        })}
+      </div>
+      <div className="admin-table">
+        <div className="admin-row order admin-head"><span>Pedido</span><span>Cliente</span><span>Total</span><span>Estado</span></div>
+        {orders.filter((order) => orderBucket(order) === orderView).map((order) => <div className="admin-order-block" key={order.id}><div className="admin-row order"><span>#{order.orderNumber}<small>{new Date(order.createdAt).toLocaleDateString('es-CO')}</small></span><span>{order.customerName ?? order.email}{order.isGuest && <em className="guest-tag"> · Invitado</em>}<small>{order.email}</small></span><b>{formatCop(order.totalCop)}</b><select value={order.status} onChange={(event) => void mutate(`/api/admin/orders/${order.id}`, 'PATCH', { status: event.target.value }).catch((error) => setMessage(error.message))}>{['pending','confirmed','preparing','shipped','completed','cancelled'].map((status) => <option value={status} key={status}>{status}</option>)}</select></div><div className="order-payment-row"><span className={`payment-badge payment-${order.paymentStatus}`}>{paymentStatusLabel[order.paymentStatus] ?? order.paymentStatus}</span>{order.receiptUrl && <a href={order.receiptUrl} target="_blank" rel="noreferrer">Ver comprobante</a>}{order.paymentStatus === 'pending_verification' && <><button onClick={() => decidePayment(order.id, 'verified')}>Aprobar pago</button><button onClick={() => decidePayment(order.id, 'rejected')}>Rechazar pago</button></>}</div></div>)}
+        {!orders.filter((order) => orderBucket(order) === orderView).length && <p className="admin-empty">No hay pedidos en esta vista.</p>}
+      </div>
+    </>}
     {tab === 'payment-settings' && <form className="admin-form inline-form small" action={submitPaymentSettings}>
       <h2>Configuración de pago por transferencia</h2>
       <input name="bankKey" placeholder="Llave / número de cuenta" defaultValue={paymentSettings?.bankKey ?? ''} />

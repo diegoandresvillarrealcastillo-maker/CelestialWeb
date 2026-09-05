@@ -57,7 +57,7 @@ export default async function Home() {
 
       <section className="season-banner">
         <img src="/images/products/hero-navidad.webp" alt="" loading="lazy" />
-        <div><p className="eyebrow"><span /> Edición especial</p><h2>Navidad, encendida<br />a mano.</h2><p>Pinos, copos, renos y aromas de temporada para regalar más que un detalle: luz, amor y arte.</p><Link className="button button-light" href="/catalogo?collection=navidad">Ver colección navideña ↗</Link></div>
+        <div><p className="eyebrow"><span /> Edición especial</p><h2>Navidad, encendida<br />a mano.</h2><p>Pinos, copos, renos y aromas de temporada para regalar más que un detalle: luz, amor y arte.</p><Link className="button button-light" href="/catalogo?category=navidad">Ver colección navideña ↗</Link></div>
         <span className="season-year">2026</span>
       </section>
 

@@ -148,7 +148,7 @@ export class PostgresAdminService implements AdminService {
 
   async createProduct(auth: AuthContext, input: unknown) {
     const product = input as Record<string, unknown>;
-    const required = ['slug', 'name', 'description', 'priceCop', 'imagePath', 'collection'];
+    const required = ['slug', 'name', 'description', 'priceCop', 'imagePath'];
     if (required.some((field) => product[field] === undefined)) {
       throw new HttpError(422, 'Faltan campos obligatorios del producto.', 'VALIDATION_ERROR');
     }
@@ -166,7 +166,7 @@ export class PostgresAdminService implements AdminService {
           product.priceMaxCop ?? null, product.priceLabel ?? null, product.imagePath,
           product.dimensions ?? null, product.weight ?? null, JSON.stringify(product.colors ?? []),
           JSON.stringify(product.fragrances ?? []), JSON.stringify(product.options ?? []), JSON.stringify(product.features ?? []),
-          product.availability ?? 'Hecho bajo pedido', product.collection, product.featured ?? false,
+          product.availability ?? 'Hecho bajo pedido', product.collection ?? 'general', product.featured ?? false,
           product.popular ?? false, product.active ?? true,
         ],
       );

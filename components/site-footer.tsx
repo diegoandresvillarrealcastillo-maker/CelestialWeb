@@ -10,7 +10,7 @@ export function SiteFooter() {
         <a className="button button-light" href={`https://wa.me/573205279249`} target="_blank" rel="noreferrer">Hablar por WhatsApp ↗</a>
       </div>
       <div className="footer-links">
-        <div><b>Explora</b><Link href="/catalogo">Todos los productos</Link><Link href="/catalogo?collection=navidad">Navidad</Link><Link href="/catalogo?category=bouquets">Bouquets</Link></div>
+        <div><b>Explora</b><Link href="/catalogo">Todos los productos</Link><Link href="/catalogo?category=navidad">Navidad</Link><Link href="/catalogo?category=bouquets">Bouquets</Link></div>
         <div><b>Ayuda</b><Link href="/cuenta">Mi cuenta</Link><Link href="/carrito">Mi bolsa</Link><Link href="/#cuidados">Cuida tu vela</Link></div>
         <div><b>Encuéntranos</b><a href="https://instagram.com/celestialvelasart" target="_blank" rel="noreferrer">{catalogFacts.instagram}</a><a href="tel:+573205279249">{catalogFacts.contactPhone}</a><span>Colombia</span></div>
       </div>
