@@ -1,42 +1,117 @@
 # Seguridad
 
-## Controles implementados
+Este documento describe el estado real de la aplicación en producción, incluyendo
+lo que falta. No es un reporte de auditoría de terceros; se actualiza a mano cada
+vez que cambia un control de seguridad relevante.
 
-- **Contraseñas**: Argon2id (19 MiB, 2 iteraciones, paralelismo 1), longitud 12-128 y requisitos de complejidad. Nunca se registran ni se devuelven.
-- **Sesiones**: token aleatorio opaco; PostgreSQL conserva SHA-256. Cookie `HttpOnly`, `SameSite=Lax`, `Secure` en producción, expiración de 24 horas configurable e invalidación en logout/cambio de contraseña.
-- **Login**: mensaje genérico, verificación de tiempo comparable con hash señuelo, límite por IP, contador persistente, bloqueo progresivo a 15 y 60 minutos e IP/cuenta seudonimizadas con HMAC.
-- **CSRF/CORS**: token asociado a sesión, comparación de tiempo constante, comprobación de `Origin` y allowlist CORS. No existe `Access-Control-Allow-Origin: *` con credenciales.
-- **Autorización**: rol obtenido en servidor, middleware administrativo, ownership explícito en pedidos y RLS como segunda barrera. No se aceptan `role`, `userId`, `price`, `discount` ni `total` del navegador.
-- **Datos**: Zod en servidor, objetos estrictos contra mass assignment, SQL parametrizado, constraints e índices. Los pedidos bloquean productos y recalculan sus líneas con precios de PostgreSQL.
-- **Navegador/API**: Helmet, CSP, HSTS solo en producción, `nosniff`, política de referencia, Permissions Policy y `frame-ancestors 'none'`. React escapa texto; no se admite HTML de usuarios.
-- **Abuso**: límites independientes para autenticación, recuperación, búsqueda, pedidos y administración; honeypot en formularios públicos.
-- **Auditoría**: cambios de producto, pedido, categoría y promoción registran actor, acción, recurso, fecha y metadatos mínimos. No se guardan secretos ni cuerpos completos.
-- **Archivos**: esta versión no ofrece subida de archivos. Las imágenes administrativas deben referenciar rutas estáticas ya revisadas; por eso no hay una superficie de upload que pueda aceptar SVG/HTML o rutas arbitrarias.
+## Autenticación y sesiones
 
-## CSP web
+- **Contraseñas**: Argon2id (19 MiB, 2 iteraciones, paralelismo 1), 12-128 caracteres
+  con requisitos de complejidad. Nunca se registran ni se devuelven.
+- **Login**: mensaje genérico, verificación de tiempo comparable con hash señuelo
+  cuando el usuario no existe, límite por IP, contador persistente y bloqueo
+  progresivo (15 min a 5 fallos, 60 min a 10).
+- **Cookie de sesión**: token aleatorio opaco; solo su SHA-256 se guarda en
+  PostgreSQL. `HttpOnly` siempre; `Secure` en producción; `SameSite=None` en
+  producción (el frontend en Cloudflare Workers y la API en Render son dominios
+  distintos, así que `Lax` nunca habría enviado la cookie en las peticiones del
+  sitio — con `None` se depende íntegramente de `Secure` + CORS + verificación de
+  `Origin` para que un tercero no pueda aprovecharla); `Lax` en desarrollo local.
+  Expira a las 24 h (configurable) y se invalida en logout y cambio de contraseña.
+- **Rol de administrador**: se asigna **exclusivamente** con una actualización
+  directa en base de datos (`user_roles`). Ningún endpoint público puede otorgarlo:
+  el registro y el login no aceptan ni derivan un campo `role`, y no existe (ni debe
+  reintroducirse) una lista de correos que auto-promueva a admin — permitía que
+  cualquiera se registrara con un correo "admin" sin haberlo verificado y obtuviera
+  el rol de inmediato.
+- **Google Sign-In**: el token de Google se verifica con `google-auth-library`. Las
+  cuentas se buscan primero por `sub` (identificador estable), no por email — así
+  un cambio de correo en Google no rompe ni suplanta la cuenta. Vincular un `sub`
+  nuevo a una cuenta local existente exige `email_verified=true` de Google; si el
+  correo ya está vinculado a un `sub` distinto, se rechaza en vez de re-vincular en
+  silencio (evita takeover por reutilización de correo).
 
-La API usa una CSP sin scripts, formularios ni objetos. La web permite `unsafe-inline` exclusivamente en `script-src` y `style-src` por la hidratación y estilos generados por el runtime Next/Vinext; no permite `unsafe-eval`, orígenes comodín, objetos ni framing. Antes de incorporar scripts de terceros, migra a nonce por respuesta y añade solo el dominio exacto necesario.
+## CSRF / CORS / Origen
 
-## RLS
+- Token CSRF ligado a la sesión, comparación de tiempo constante, verificado en
+  toda escritura autenticada.
+- CORS con allowlist explícita (`WEB_ORIGIN`); nunca `*` con credenciales.
+- Verificación adicional de `Origin` en todo método no seguro (`originGuard`),
+  independiente de la librería CORS.
+- La redirección HTTP→HTTPS del API normaliza la ruta para impedir un open
+  redirect vía `//host-externo/...`.
 
-RLS está habilitado en todas las tablas sensibles. El backend establece `app.user_id`, `app.user_role` y, durante autenticación, un hash de sesión o token dentro de la transacción. Los pedidos y perfiles se limitan al propietario; escritura de catálogo, roles, promociones y auditoría exige administrador. No hay políticas `USING (true)` para información sensible.
+## Autorización
 
-RLS no sustituye la autorización de Express. La cuenta de producción no debe ser propietaria de las tablas ni tener `BYPASSRLS`; las migraciones usan una cuenta distinta.
+- Rol obtenido siempre en servidor a partir de la sesión, nunca de la petición.
+- `role`, `userId`, `price`, `discount`, `total` nunca se aceptan del navegador
+  (Zod estricto + mapa explícito de columnas en las actualizaciones admin).
+- Pedidos de usuarios autenticados: ownership explícito (`WHERE user_id = $2`) en
+  cada consulta.
+- Pedidos de invitado: no requieren cuenta, pero adjuntar un comprobante exige el
+  UUID del pedido **y** un token de un solo uso emitido al crear el pedido (solo
+  su SHA-256 se guarda). Antes de esto, conocer el UUID bastaba para subir o
+  reemplazar el comprobante de cualquier pedido de invitado.
 
-## Auditoría OWASP final
+## RLS (Row-Level Security)
 
-| Severidad inicial | Hallazgo | Estado |
-| --- | --- | --- |
-| ALTA | 12 avisos de dependencias en el scaffolding (Next, RSC, Vite, Vinext y Cloudflare) | Corregidos mediante versiones compatibles; `npm audit` final: 0 |
-| ALTA | Riesgo de IDOR en pedidos si se consultaba solo por identificador | Corregido con propietario en consulta, servicio y RLS; prueba Usuario B → pedido de A devuelve 404 |
-| ALTA | Manipulación de precio/total desde DevTools | Corregido: esquema rechaza esos campos y PostgreSQL recalcula en transacción |
-| MEDIA | CSRF en sesiones por cookie | Corregido con token por sesión, Origin y SameSite |
-| MEDIA | Mass assignment administrativo | Corregido con Zod estricto y mapa explícito de columnas |
-| MEDIA | Enumeración y fuerza bruta en login/recuperación | Corregido con mensajes genéricos, rate limit y bloqueo progresivo |
-| BAJA | Dependencia de `unsafe-inline` por runtime web | Aceptada y documentada; sin `unsafe-eval`, terceros ni HTML de usuario |
+RLS está habilitado en las tablas sensibles y las políticas existen (propietario
+para pedidos/perfiles, admin para catálogo/roles/promociones/auditoría). **Dicho
+esto, RLS aquí es defensa en profundidad, no el límite principal**: la conexión
+de la API a Supabase probablemente usa el rol `postgres` por defecto del proyecto,
+que tiene `BYPASSRLS`. Si es así, las políticas no se están evaluando en
+producción — la protección real hoy viene de los `WHERE` explícitos en cada
+consulta del backend. Pendiente: crear un rol de aplicación sin `BYPASSRLS` con
+privilegios mínimos (`SELECT/INSERT/UPDATE/DELETE` solo en las tablas necesarias)
+y mover `DATABASE_URL` a ese rol, probando cada flujo antes de confirmar el
+cambio en producción.
 
-No quedaron hallazgos CRÍTICOS ni ALTOS abiertos en la revisión automatizada. La integración de pagos y uploads no está activa; cuando se añadan, exige firma de webhook, idempotencia, MIME real, límites de tamaño y almacenamiento no ejecutable.
+## Archivos subidos
+
+Hay tres superficies de subida: imágenes de producto y del QR de pago (admin) y
+comprobantes de pago (clientes/invitados). Todas usan `multer` en memoria,
+límite de 5 MB, y se guardan en Supabase Storage con nombre aleatorio (no el
+nombre original). **Limitación conocida**: el tipo de archivo se valida por el
+`Content-Type` que envía el navegador, no por los bytes reales del archivo — un
+atacante podría subir un archivo distinto disfrazado de imagen. Los comprobantes
+van a un bucket privado servido solo por URL firmada de corta duración; las
+imágenes de producto van a un bucket público (es su propósito).
+
+## Cabeceras / navegador
+
+Helmet, CSP restrictiva en el API (`default-src 'none'`), HSTS solo en
+producción, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` y
+`frame-ancestors 'none'`. React escapa todo texto; no se interpreta HTML de
+usuarios.
+
+## Abuso
+
+Límites de tasa independientes para login, registro, recuperación, búsqueda,
+pedidos y administración. Honeypot en formularios públicos. Cloudflare Turnstile
+disponible para el flujo de registro (hoy sin interfaz pública, ver más abajo).
+
+## Auditoría
+
+Cambios de producto, pedido, categoría, promoción y configuración de pago
+registran actor, acción, recurso, fecha y metadatos mínimos — nunca secretos ni
+cuerpos completos de la petición.
+
+## Riesgos residuales conocidos (sin resolver)
+
+- **RLS bypass probable**: ver sección RLS arriba. Requiere cambiar la credencial
+  de base de datos en un momento de bajo tráfico, con pruebas completas de cada
+  flujo antes de confirmar.
+- **Validación de archivos por MIME declarado**, no por contenido real.
+- **Registro público** (`POST /api/auth/register`) sigue activo en el backend
+  aunque no tiene interfaz — solo crea cuentas `customer`, nunca admin, pero si no
+  se va a usar debería cerrarse o mantenerse solo por si se reactiva el registro
+  de clientes.
+- **Promociones** (`/api/admin/promotions`) se pueden crear y activar desde el
+  panel, pero el proceso de checkout no las aplica todavía a ningún pedido.
 
 ## Reporte de vulnerabilidades
 
-No abras un issue público con un secreto o una prueba explotable. Envía un reporte privado al responsable del repositorio con impacto, pasos mínimos y versión afectada. Revoca inmediatamente cualquier credencial expuesta antes de modificar el historial Git.
+No abras un issue público con un secreto o una prueba explotable. Envía un
+reporte privado al responsable del repositorio con impacto, pasos mínimos y
+versión afectada. Revoca inmediatamente cualquier credencial expuesta antes de
+modificar el historial Git.
