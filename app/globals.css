@@ -314,6 +314,9 @@ button { font: inherit; }
 .checkout-card form, .account-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
 .checkout-card label, .account-card label { display: flex; flex-direction: column; gap: 7px; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .checkout-card input, .checkout-card textarea, .account-card input { min-height: 43px; padding: 10px 12px; border: 1px solid var(--line); background: white; color: var(--ink); text-transform: none; }
+.password-field { position: relative; }
+.password-field input { width: 100%; padding-right: 42px; }
+.password-toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; border: 0; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .checkout-card textarea { min-height: 68px; resize: vertical; }
 .checkout-card .button, .account-card .button { border: 0; cursor: pointer; }
 .form-message { margin-top: 16px; padding: 12px; background: rgba(168,78,49,.09); color: var(--clay); font-size: 11px; line-height: 1.5; }
@@ -322,7 +325,12 @@ button { font: inherit; }
 .payment-step { max-width: 460px; margin: 0 auto; }
 .payment-details { margin: 20px 0; padding: 20px; background: white; border: 1px solid var(--line); text-align: center; }
 .payment-details p { margin: 8px 0; font-size: 12px; color: var(--ink); }
-.payment-qr { display: block; width: 180px; height: 180px; object-fit: contain; margin: 0 auto 16px; background: white; }
+.payment-qr { display: block; width: 180px; height: 180px; object-fit: contain; margin: 0 auto; background: white; }
+.payment-qr-trigger { display: block; width: 100%; margin: 0 auto 16px; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.payment-qr-hint { display: block; margin-top: 6px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #97897e; }
+.lightbox-overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 32px; background: rgba(20, 15, 12, .85); cursor: zoom-out; }
+.lightbox-image { max-width: min(92vw, 480px); max-height: 85vh; width: 100%; height: auto; background: white; padding: 16px; }
+.lightbox-close { position: fixed; top: 20px; right: 20px; width: 40px; height: 40px; border: 0; border-radius: 50%; background: white; color: var(--ink); font-size: 16px; cursor: pointer; }
 .form-message a { text-decoration: underline; }
 
 .account-page { min-height: 760px; display: grid; grid-template-columns: 1.1fr .9fr; }
@@ -343,7 +351,9 @@ button { font: inherit; }
 .divider-text::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line); }
 .divider-text span { position: relative; padding: 0 12px; background: var(--cream); color: #97897e; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .honeypot { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
-.forgot-link, .logout-button { display: block; margin: 18px auto 0; padding: 0 0 4px; border: 0; border-bottom: 1px solid currentColor; background: transparent; color: #75685f; font-size: 11px; cursor: pointer; }
+.logout-button { display: block; margin: 18px auto 0; padding: 0 0 4px; border: 0; border-bottom: 1px solid currentColor; background: transparent; color: #75685f; font-size: 11px; cursor: pointer; }
+.forgot-link { display: block; width: 100%; margin: 10px 0 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--clay); font-size: 13px; font-weight: 650; text-align: center; cursor: pointer; }
+.forgot-link:hover { background: var(--clay); color: white; border-color: var(--clay); }
 .signed-in .account-status { display: flex; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .signed-in .account-status:first-of-type { border-top: 1px solid var(--line); }
 .verified { color: var(--sage); }

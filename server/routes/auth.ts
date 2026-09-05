@@ -18,7 +18,7 @@ export function authRoutes(service: AuthService, env: AppEnv) {
   const cookieOptions = {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
+    sameSite: (env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
     path: '/',
     maxAge: env.SESSION_TTL_HOURS * 60 * 60 * 1000,
   };

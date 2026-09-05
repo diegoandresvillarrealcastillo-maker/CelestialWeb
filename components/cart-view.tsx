@@ -19,6 +19,7 @@ export function CartView() {
   const [receiptStatus, setReceiptStatus] = useState<'idle' | 'uploading' | 'done'>('idle');
   const [receiptMessage, setReceiptMessage] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [qrExpanded, setQrExpanded] = useState(false);
 
   useEffect(() => {
     fetch(`${apiUrl}/api/auth/me`, { credentials: 'include' })
@@ -93,12 +94,23 @@ export function CartView() {
         <p className="detail-price">{formatCop(createdOrder.totalCop)}</p>
         {paymentSettings ? (
           <div className="payment-details">
-            {paymentSettings.qrImageUrl && <img className="payment-qr" src={paymentSettings.qrImageUrl} alt="Código QR para transferencia" />}
+            {paymentSettings.qrImageUrl && (
+              <button type="button" className="payment-qr-trigger" onClick={() => setQrExpanded(true)} aria-label="Ampliar código QR">
+                <img className="payment-qr" src={paymentSettings.qrImageUrl} alt="Código QR para transferencia" />
+                <span className="payment-qr-hint">Toca para ampliar</span>
+              </button>
+            )}
             {paymentSettings.bankKey && <p><b>Llave / cuenta:</b> {paymentSettings.bankKey}</p>}
             {paymentSettings.accountHolder && <p><b>A nombre de:</b> {paymentSettings.accountHolder}</p>}
             {paymentSettings.instructions && <p>{paymentSettings.instructions}</p>}
           </div>
         ) : <p>Escríbenos por WhatsApp para recibir los datos de transferencia.</p>}
+        {qrExpanded && paymentSettings?.qrImageUrl && (
+          <div className="lightbox-overlay" onClick={() => setQrExpanded(false)}>
+            <img className="lightbox-image" src={paymentSettings.qrImageUrl} alt="Código QR para transferencia ampliado" />
+            <button type="button" className="lightbox-close" onClick={() => setQrExpanded(false)} aria-label="Cerrar imagen ampliada">✕</button>
+          </div>
+        )}
         {receiptStatus === 'done' ? (
           <p className="form-message" role="status">Comprobante recibido. Tu pago quedó <b>pendiente de verificación</b> — te avisaremos cuando lo confirmemos.</p>
         ) : (
