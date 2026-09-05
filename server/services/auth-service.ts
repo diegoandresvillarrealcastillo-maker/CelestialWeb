@@ -28,17 +28,6 @@ export class PostgresAuthService implements AuthService {
     return hashIdentifier(meta.ip || 'unknown', this.env.IP_HASH_SECRET);
   }
 
-  private async grantAdminRole(client: PoolClient, userId: string) {
-    await client.query("SELECT set_config('app.user_role', 'admin', true)");
-    await client.query(
-      `INSERT INTO user_roles (user_id, role_id)
-       SELECT $1, id FROM roles WHERE name = 'admin'
-       ON CONFLICT (user_id, role_id) DO NOTHING`,
-      [userId],
-    );
-    await client.query("SELECT set_config('app.user_role', 'customer', true)");
-  }
-
   private async lookupUser(email: string): Promise<LoginUser | null> {
     return inTransaction(this.pool, async (client) => {
       await client.query("SELECT set_config('app.login_email', $1, true)", [email]);
@@ -127,9 +116,6 @@ export class PostgresAuthService implements AuthService {
            SELECT $1, id FROM roles WHERE name = 'customer'`,
           [userId],
         );
-        if (this.env.adminEmails.includes(input.email.toLowerCase())) {
-          await this.grantAdminRole(client, userId);
-        }
         await client.query(
           `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
            VALUES ($1, $2, now() + interval '24 hours')`,
@@ -181,11 +167,7 @@ export class PostgresAuthService implements AuthService {
       const roleResult = await client.query<{ name: string }>(
         `SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`, [user.id],
       );
-      let roles = roleResult.rows.map((row) => row.name);
-      if (!roles.includes('admin') && this.env.adminEmails.includes(user.email.toLowerCase())) {
-        await this.grantAdminRole(client, user.id);
-        roles = [...roles, 'admin'];
-      }
+      const roles = roleResult.rows.map((row) => row.name);
       const role = roles.includes('admin') ? 'admin' : roles[0] ?? 'customer';
       await client.query("SELECT set_config('app.user_role', $1, true)", [role]);
       await client.query('UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = $1', [user.id]);
@@ -240,23 +222,40 @@ export class PostgresAuthService implements AuthService {
         "SELECT set_config('app.login_email', $1, true), set_config('app.registration_email', $1, true), set_config('app.auth_event', 'true', true)",
         [email],
       );
-      const existing = await client.query<{ id: string; google_sub: string | null; email_verified_at: Date | null; status: string }>(
+      // google_sub is the stable identity once an account is linked — look it up first so a
+      // Google-side email change on an already-linked account still resolves to the same user.
+      const bySub = await client.query<{ id: string; email_verified_at: Date | null; status: string }>(
+        'SELECT id, email_verified_at, status FROM users WHERE google_sub = $1 LIMIT 1', [googleSub],
+      );
+      const byEmail = bySub.rows[0] ? { rows: [] as never[] } : await client.query<{ id: string; google_sub: string | null; email_verified_at: Date | null; status: string }>(
         'SELECT id, google_sub, email_verified_at, status FROM users WHERE email = $1 LIMIT 1', [email],
       );
 
       let userId: string;
       let emailVerifiedAt: Date | null;
-      if (existing.rows[0]) {
-        const user = existing.rows[0];
+      if (bySub.rows[0]) {
+        const user = bySub.rows[0];
         if (user.status !== 'active') throw new HttpError(403, 'Tu cuenta no está activa.', 'ACCOUNT_INACTIVE');
         userId = user.id;
         await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.user_role', 'customer', true)", [userId]);
-        if (!user.google_sub) await client.query('UPDATE users SET google_sub = $2 WHERE id = $1', [userId, googleSub]);
         emailVerifiedAt = user.email_verified_at;
         if (!emailVerifiedAt && emailVerifiedByGoogle) {
           await client.query('UPDATE users SET email_verified_at = now() WHERE id = $1', [userId]);
           emailVerifiedAt = new Date();
         }
+      } else if (byEmail.rows[0]) {
+        const user = byEmail.rows[0];
+        if (user.status !== 'active') throw new HttpError(403, 'Tu cuenta no está activa.', 'ACCOUNT_INACTIVE');
+        // This email already belongs to a DIFFERENT verified Google identity — never re-link
+        // it silently, or an attacker who later verifies the same email with a new Google
+        // account could take over an account they don't own.
+        if (user.google_sub) throw new HttpError(409, 'Este correo ya está vinculado a otra cuenta de Google.', 'GOOGLE_ACCOUNT_MISMATCH');
+        if (!emailVerifiedByGoogle) throw new HttpError(403, 'Google no confirmó este correo; no es posible vincular la cuenta.', 'GOOGLE_EMAIL_UNVERIFIED');
+        userId = user.id;
+        await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.user_role', 'customer', true)", [userId]);
+        await client.query('UPDATE users SET google_sub = $2 WHERE id = $1', [userId, googleSub]);
+        emailVerifiedAt = user.email_verified_at ?? new Date();
+        if (!user.email_verified_at) await client.query('UPDATE users SET email_verified_at = now() WHERE id = $1', [userId]);
       } else {
         const inserted = await client.query<{ id: string }>(
           `INSERT INTO users (email, password_hash, google_sub, email_verified_at)
@@ -275,11 +274,7 @@ export class PostgresAuthService implements AuthService {
       const roleResult = await client.query<{ name: string }>(
         `SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`, [userId],
       );
-      let roles = roleResult.rows.map((row) => row.name);
-      if (!roles.includes('admin') && this.env.adminEmails.includes(email.toLowerCase())) {
-        await this.grantAdminRole(client, userId);
-        roles = [...roles, 'admin'];
-      }
+      const roles = roleResult.rows.map((row) => row.name);
       const role = roles.includes('admin') ? 'admin' : roles[0] ?? 'customer';
       await client.query("SELECT set_config('app.user_role', $1, true)", [role]);
 

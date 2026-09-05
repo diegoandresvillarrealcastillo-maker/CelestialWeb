@@ -25,7 +25,7 @@ export interface OrderService {
   create(auth: AuthContext | null, input: unknown): Promise<unknown>;
   list(auth: AuthContext): Promise<unknown[]>;
   get(auth: AuthContext, orderId: string): Promise<unknown | null>;
-  attachReceipt(auth: AuthContext | null, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }): Promise<unknown>;
+  attachReceipt(auth: AuthContext | null, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }, guestToken?: string): Promise<unknown>;
 }
 
 export interface AdminService {

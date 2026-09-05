@@ -1,8 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { hashPassword, verifyPassword } from '../server/security/passwords.js';
+import { PostgresOrderService } from '../server/services/order-service.js';
 import { PostgresProductService } from '../server/services/product-service.js';
 import { hashIdentifier, hashToken, safeTokenMatch } from '../server/security/tokens.js';
+
+function fakeGuestOrderPool(order: { payment_status: string; guest_token_hash: string | null } | undefined) {
+  const client = {
+    query: vi.fn(async (sql: string) => {
+      if (/^SELECT id, payment_status/.test(sql.trim())) return { rows: order ? [{ id: 'order-1', ...order }] : [] };
+      return { rows: [] };
+    }),
+    release: vi.fn(),
+  };
+  return { connect: vi.fn(async () => client) } as never;
+}
 
 describe('token matching', () => {
   it('accepts a raw token that matches its own hash', () => {
@@ -50,6 +62,34 @@ describe('parameterized catalog search', () => {
     const [sql, values] = calls[0] as [string, unknown[]];
     expect(sql).not.toContain(attack);
     expect(values).toContain(`%${attack}%`);
+  });
+});
+
+describe('guest order receipt authorization', () => {
+  const rawToken = 'guest-order-secret-token';
+  const service = () => new PostgresOrderService(fakeGuestOrderPool({ payment_status: 'pending', guest_token_hash: hashToken(rawToken) }), {} as never);
+  const file = { buffer: Buffer.from('x'), mimetype: 'image/jpeg', originalname: 'r.jpg' };
+
+  it('rejects a correct order id with the wrong token', async () => {
+    await expect(service().attachReceipt(null, 'order-1', file, 'not-the-token'))
+      .rejects.toMatchObject({ status: 403, code: 'ORDER_TOKEN_INVALID' });
+  });
+
+  it('rejects a request with no token at all', async () => {
+    await expect(service().attachReceipt(null, 'order-1', file, undefined))
+      .rejects.toMatchObject({ status: 403, code: 'ORDER_TOKEN_INVALID' });
+  });
+
+  it('rejects a valid-looking token for an order that has none stored (pre-migration orders)', async () => {
+    const noTokenService = new PostgresOrderService(fakeGuestOrderPool({ payment_status: 'pending', guest_token_hash: null }), {} as never);
+    await expect(noTokenService.attachReceipt(null, 'order-1', file, rawToken))
+      .rejects.toMatchObject({ status: 403, code: 'ORDER_TOKEN_INVALID' });
+  });
+
+  it('rejects when the order id does not exist', async () => {
+    const missingService = new PostgresOrderService(fakeGuestOrderPool(undefined), {} as never);
+    await expect(missingService.attachReceipt(null, 'nope', file, rawToken))
+      .rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' });
   });
 });
 

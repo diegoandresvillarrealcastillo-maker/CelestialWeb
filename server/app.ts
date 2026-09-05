@@ -37,14 +37,17 @@ export function createApp(env: AppEnv, services: Services) {
 
   app.use(pinoHttp({
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
-    redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'res.headers.set-cookie'],
+    redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.headers.x-order-token', 'res.headers.set-cookie'],
     serializers: { req: (request: { id?: unknown; method?: string; url?: string }) => ({ id: request.id, method: request.method, url: request.url }) },
   }));
 
   app.use((request, response, next) => {
     if (env.NODE_ENV === 'production' && !request.secure) {
       if (!env.PUBLIC_API_URL) return response.status(400).json({ error: { code: 'HTTPS_REQUIRED', message: 'HTTPS es obligatorio.' } });
-      const target = new URL(request.originalUrl, env.PUBLIC_API_URL);
+      // Collapse any leading slashes/backslashes to exactly one so a path like
+      // "//evil.example/x" can't be resolved as protocol-relative and hijack the redirect host.
+      const safePath = `/${request.originalUrl.replace(/^[/\\]+/, '')}`;
+      const target = new URL(safePath, env.PUBLIC_API_URL);
       return response.redirect(308, target.toString());
     }
     next();
@@ -70,7 +73,7 @@ export function createApp(env: AppEnv, services: Services) {
   app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key'],
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key', 'X-Order-Token'],
     origin(origin, callback) {
       if (!origin || env.allowedOrigins.includes(origin)) return callback(null, true);
       callback(null, false);

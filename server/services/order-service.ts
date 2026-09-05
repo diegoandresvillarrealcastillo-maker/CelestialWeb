@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { AppEnv } from '../config/env.js';
 import { inTransaction, setDbContext, withAuthContext } from '../database/pool.js';
 import { HttpError } from '../http/errors.js';
-import { hashToken } from '../security/tokens.js';
+import { hashToken, randomToken, safeTokenMatch } from '../security/tokens.js';
 import type { AuthContext } from '../types.js';
 import { writeAuditLog } from './audit.js';
 import type { OrderService } from './contracts.js';
@@ -69,10 +69,11 @@ export class PostgresOrderService implements OrderService {
         return { ...item, product };
       });
 
+      const guestToken = auth ? null : randomToken();
       const orderResult = await client.query<{ id: string; order_number: string }>(
-        `INSERT INTO orders (user_id, guest_email, subtotal_cop, discount_cop, shipping_cop, total_cop, shipping_address, customer_note)
-         VALUES ($1, $2, $3, 0, 0, $3, $4::jsonb, $5) RETURNING id, order_number`,
-        [userId, auth ? null : input.guestEmail, subtotal, JSON.stringify(input.shippingAddress), input.customerNote ?? null],
+        `INSERT INTO orders (user_id, guest_email, guest_token_hash, subtotal_cop, discount_cop, shipping_cop, total_cop, shipping_address, customer_note)
+         VALUES ($1, $2, $3, $4, 0, 0, $4, $5::jsonb, $6) RETURNING id, order_number`,
+        [userId, auth ? null : input.guestEmail, guestToken ? hashToken(guestToken) : null, subtotal, JSON.stringify(input.shippingAddress), input.customerNote ?? null],
       );
       const order = orderResult.rows[0];
 
@@ -88,6 +89,7 @@ export class PostgresOrderService implements OrderService {
         id: order.id, orderNumber: order.order_number, status: 'pending', currency: 'COP',
         subtotalCop: subtotal, discountCop: 0, shippingCop: 0, totalCop: subtotal,
         shippingNotice: 'El valor del envío se confirma según ciudad y peso.',
+        ...(guestToken ? { guestToken } : {}),
       };
       await client.query(
         `INSERT INTO idempotency_keys (key_hash, user_id, scope, response_status, response_body, expires_at)
@@ -139,17 +141,22 @@ export class PostgresOrderService implements OrderService {
     });
   }
 
-  async attachReceipt(auth: AuthContext | null, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }) {
+  async attachReceipt(auth: AuthContext | null, orderId: string, file: { buffer: Buffer; mimetype: string; originalname: string }, guestToken?: string) {
     return inTransaction(this.pool, async (client) => {
       if (auth) await setDbContext(client, auth);
-      const orderResult = await client.query<{ id: string; payment_status: string }>(
+      const orderResult = await client.query<{ id: string; payment_status: string; guest_token_hash: string | null }>(
         auth
-          ? `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`
-          : `SELECT id, payment_status FROM orders WHERE id = $1 AND user_id IS NULL LIMIT 1`,
+          ? `SELECT id, payment_status, NULL AS guest_token_hash FROM orders WHERE id = $1 AND user_id = $2 LIMIT 1`
+          : `SELECT id, payment_status, guest_token_hash FROM orders WHERE id = $1 AND user_id IS NULL LIMIT 1`,
         auth ? [orderId, auth.userId] : [orderId],
       );
       const order = orderResult.rows[0];
       if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+      if (!auth) {
+        if (!order.guest_token_hash || !guestToken || !safeTokenMatch(guestToken, order.guest_token_hash)) {
+          throw new HttpError(403, 'No es posible verificar que este pedido te pertenece.', 'ORDER_TOKEN_INVALID');
+        }
+      }
       if (!['pending', 'rejected'].includes(order.payment_status)) {
         throw new HttpError(409, 'Este pedido no admite un nuevo comprobante en su estado actual.', 'RECEIPT_NOT_ALLOWED');
       }

@@ -31,7 +31,8 @@ export function orderRoutes(service: OrderService) {
     const orderId = String(request.params.id);
     if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
     if (!request.file) throw new HttpError(400, 'Falta una imagen válida (jpeg, png o webp, máx. 5MB).', 'INVALID_FILE');
-    response.status(201).json({ order: await service.attachReceipt(request.auth ?? null, orderId, request.file) });
+    const guestToken = request.get('x-order-token');
+    response.status(201).json({ order: await service.attachReceipt(request.auth ?? null, orderId, request.file, guestToken) });
   });
   return router;
 }

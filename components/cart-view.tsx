@@ -7,7 +7,7 @@ import { useCart } from './cart-provider';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-type CreatedOrder = { id: string; orderNumber: string; totalCop: number };
+type CreatedOrder = { id: string; orderNumber: string; totalCop: number; guestToken?: string };
 type PaymentSettings = { bankKey: string | null; accountHolder: string | null; qrImageUrl: string | null; instructions: string | null };
 
 export function CartView() {
@@ -75,7 +75,12 @@ export function CartView() {
       const body = new FormData();
       body.append('file', file);
       const response = await fetch(`${apiUrl}/api/orders/${createdOrder.id}/receipt`, {
-        method: 'POST', credentials: 'include', headers: csrfToken ? { 'x-csrf-token': csrfToken } : {}, body,
+        method: 'POST', credentials: 'include',
+        headers: {
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          ...(createdOrder.guestToken ? { 'x-order-token': createdOrder.guestToken } : {}),
+        },
+        body,
       });
       const result = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(result.error?.message ?? 'No fue posible enviar el comprobante.');

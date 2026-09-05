@@ -19,7 +19,6 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().email().optional(),
   PAYMENT_WEBHOOK_SECRET: z.string().min(32).optional(),
   APP_ENCRYPTION_KEY: z.string().min(32).optional(),
-  ADMIN_EMAILS: z.string().optional(),
   REQUIRE_EMAIL_VERIFICATION: booleanString.default(false),
   GOOGLE_CLIENT_ID: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
@@ -27,7 +26,7 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
 });
 
-export type AppEnv = z.infer<typeof envSchema> & { allowedOrigins: string[]; adminEmails: string[] };
+export type AppEnv = z.infer<typeof envSchema> & { allowedOrigins: string[] };
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const parsed = envSchema.safeParse(source);
@@ -38,6 +37,5 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   return {
     ...parsed.data,
     allowedOrigins: parsed.data.WEB_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean),
-    adminEmails: (parsed.data.ADMIN_EMAILS ?? '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean),
   };
 }
