@@ -113,19 +113,34 @@ export class PostgresAdminService implements AdminService {
   }
 
   async updateProduct(auth: AuthContext, productId: string, input: unknown) {
-    const entries = Object.entries(input as Record<string, unknown>).filter(([key]) => columnMap[key]);
-    if (!entries.length) throw new HttpError(422, 'No hay campos permitidos para actualizar.', 'EMPTY_UPDATE');
-    const values: unknown[] = [productId];
-    const assignments = entries.map(([key, value], index) => {
-      values.push(jsonFields.has(key) ? JSON.stringify(value) : value);
-      return `${columnMap[key]} = $${index + 2}${jsonFields.has(key) ? '::jsonb' : ''}`;
-    });
+    const record = input as Record<string, unknown>;
+    const categoryId = typeof record.categoryId === 'string' ? record.categoryId : undefined;
+    const entries = Object.entries(record).filter(([key]) => columnMap[key]);
+    if (!entries.length && categoryId === undefined) throw new HttpError(422, 'No hay campos permitidos para actualizar.', 'EMPTY_UPDATE');
+
     return withAuthContext(this.pool, auth, async (client) => {
-      const result = await client.query(
-        `UPDATE products SET ${assignments.join(', ')} WHERE id = $1
-         RETURNING id, slug, name, price_cop AS "priceCop", active`, values,
-      );
-      if (!result.rows[0]) throw new HttpError(404, 'Producto no encontrado.', 'NOT_FOUND');
+      let result;
+      if (entries.length) {
+        const values: unknown[] = [productId];
+        const assignments = entries.map(([key, value], index) => {
+          values.push(jsonFields.has(key) ? JSON.stringify(value) : value);
+          return `${columnMap[key]} = $${index + 2}${jsonFields.has(key) ? '::jsonb' : ''}`;
+        });
+        result = await client.query(
+          `UPDATE products SET ${assignments.join(', ')} WHERE id = $1
+           RETURNING id, slug, name, price_cop AS "priceCop", active`, values,
+        );
+        if (!result.rows[0]) throw new HttpError(404, 'Producto no encontrado.', 'NOT_FOUND');
+      } else {
+        result = await client.query(
+          `SELECT id, slug, name, price_cop AS "priceCop", active FROM products WHERE id = $1`, [productId],
+        );
+        if (!result.rows[0]) throw new HttpError(404, 'Producto no encontrado.', 'NOT_FOUND');
+      }
+      if (categoryId) {
+        await client.query('DELETE FROM product_categories WHERE product_id = $1', [productId]);
+        await client.query('INSERT INTO product_categories (product_id, category_id) VALUES ($1, $2)', [productId, categoryId]);
+      }
       await this.audit(client, auth, 'product.updated', 'product', productId, { fields: entries.map(([key]) => key) });
       return result.rows[0];
     });
