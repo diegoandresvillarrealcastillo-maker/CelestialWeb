@@ -26,7 +26,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  // 'standalone' output is for self-hosting via Dockerfile.web; it's incompatible
+  // with Vercel's own build tracing and breaks deploys there, so skip it on Vercel.
+  ...(process.env.VERCEL ? {} : { output: 'standalone' as const }),
   poweredByHeader: false,
   async headers() {
     return [
