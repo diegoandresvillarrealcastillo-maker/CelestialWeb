@@ -81,10 +81,6 @@ button { font: inherit; }
   padding: clamp(54px, 8vh, 92px) clamp(28px, 7.2vw, 112px);
   position: relative;
 }
-.hero-copy::before {
-  content: ''; position: absolute; width: 360px; height: 360px; left: -180px; bottom: -210px;
-  border: 1px solid var(--line); border-radius: 50%; box-shadow: 0 0 0 40px var(--paper), 0 0 0 41px var(--line);
-}
 .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 24px; color: var(--clay); font-size: 10px; font-weight: 800; letter-spacing: .19em; text-transform: uppercase; }
 .eyebrow span { width: 30px; height: 1px; background: currentColor; }
 .hero h1 {
@@ -320,7 +316,8 @@ button { font: inherit; }
 .checkout-card input, .checkout-card textarea, .account-card input { min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); background: white; color: var(--ink); text-transform: none; }
 .password-field { position: relative; }
 .password-field input { width: 100%; padding-right: 42px; }
-.password-toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; border: 0; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.password-toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 40px; border: 0; background: transparent; cursor: pointer; line-height: 1; display: flex; align-items: center; justify-content: center; color: #8a7b6f; }
+.password-toggle:hover { color: var(--ink); }
 .checkout-card textarea { min-height: 68px; resize: vertical; }
 .checkout-card .button, .account-card .button { border: 0; cursor: pointer; }
 .form-message { margin-top: 16px; padding: 12px; background: rgba(168,78,49,.09); color: var(--clay); font-size: 11px; line-height: 1.5; }

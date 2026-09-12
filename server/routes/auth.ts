@@ -47,7 +47,7 @@ export function authRoutes(service: AuthService, env: AppEnv) {
   router.post('/forgot-password', recoveryLimit, async (request, response) => {
     const input = forgotPasswordSchema.parse(request.body);
     await service.forgotPassword(input.email, meta(request));
-    response.status(202).json({ message: 'Si la cuenta existe, recibirás instrucciones para continuar.' });
+    response.status(202).json({ message: 'Revisa tu correo para continuar.' });
   });
 
   router.post('/reset-password', recoveryLimit, async (request, response) => {
