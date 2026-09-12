@@ -4,12 +4,12 @@ const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4
 const production = process.env.NODE_ENV === 'production';
 const csp = [
   "default-src 'self'",
-  `connect-src 'self' ${apiOrigin} https://accounts.google.com https://challenges.cloudflare.com`,
-  "img-src 'self' data: blob: https://*.supabase.co https://*.googleusercontent.com",
+  `connect-src 'self' ${apiOrigin}`,
+  "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-  "script-src 'self' 'unsafe-inline' https://accounts.google.com https://challenges.cloudflare.com",
-  "frame-src https://accounts.google.com https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${production ? '' : " 'unsafe-eval'"}`,
+  "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -26,6 +26,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   poweredByHeader: false,
   async headers() {
     return [

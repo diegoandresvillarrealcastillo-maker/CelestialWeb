@@ -1,68 +1,75 @@
 # Celestial Velas Artesanales
 
-Tienda Full-Stack para el catálogo 2026 de Celestial. Incluye 22 productos extraídos de los dos catálogos suministrados, búsqueda y filtros, detalle de producto, carrito, cuentas, pedidos, panel administrativo, PostgreSQL, RLS, auditoría y hardening HTTP.
+Tienda Full-Stack para el catálogo de Celestial: 22 productos trazables a los catálogos suministrados, compra como invitado, confirmación por WhatsApp, carga privada de comprobantes y panel exclusivo para dos administradores. No existen cuentas, registro ni inicio de sesión para clientes.
 
-## Requisitos
+## Arquitectura soportada
 
-- Node.js 22.13 o superior.
-- PostgreSQL 15 o superior (local, administrado o Supabase).
-- Un proveedor HTTP de correo para verificación y recuperación.
-- HTTPS en cualquier entorno público.
+- **Web:** Next.js en Vercel.
+- **API:** Node.js + Express en Render.
+- **Datos y archivos:** PostgreSQL y Storage de Supabase.
+- **Administración:** exactamente dos cuentas locales con contraseña, aprovisionadas por consola. El arranque de producción falla si hay más o menos de dos administradores válidos.
 
 ## Instalación local
 
-1. Instala dependencias: `npm ci`.
-2. Copia `.env.example` como `.env` y completa únicamente en tu equipo:
-   - `DATABASE_URL`: conexión PostgreSQL.
-   - `IP_HASH_SECRET`: valor aleatorio de al menos 32 caracteres.
-   - `WEB_ORIGIN`: orígenes web permitidos, separados por coma.
-   - `PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL` y `NEXT_PUBLIC_API_URL`: URLs locales o públicas.
-   - Proveedor de correo: `EMAIL_PROVIDER_URL`, `EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`.
-3. Valores locales habituales: web en puerto 3000 y API en 4000. No copies secretos a variables `NEXT_PUBLIC_*`.
-4. Ejecuta `npm run db:migrate` y luego `npm run db:seed`.
-5. Inicia ambas superficies con `npm run dev:all`.
+Requiere Node.js 22.13+ y PostgreSQL 15+.
 
-La API espera que el proveedor de correo acepte un `POST` JSON con `from`, `to`, `subject` y `text`, autenticado mediante Bearer. Si no se configura, la cuenta se crea pero no se envía correo; el endpoint nunca expone el token.
+1. Ejecuta `npm ci`.
+2. Copia `.env.example` a `.env` y completa valores locales. Nunca pongas secretos en variables `NEXT_PUBLIC_*`.
+3. Ejecuta `npm run db:migrate`, `npm run db:seed` y, si tu usuario PostgreSQL puede crear bases temporales, `npm run db:verify`.
+4. Inicia web y API con `npm run dev:all`.
+
+Para probar el panel localmente, crea las dos cuentas con `npm run admin:provision`, pasando `ADMIN_EMAIL`, `ADMIN_FULL_NAME` y `ADMIN_PASSWORD` solo al proceso de aprovisionamiento. No las dejes guardadas en Render ni en `.env`.
 
 ## Scripts
 
 | Script | Función |
 | --- | --- |
 | `npm run dev:all` | Web y API en desarrollo |
-| `npm run build` | Build de producción de la web |
-| `npm run build:api` | Compila la API a `dist-api/` |
-| `npm run typecheck` | Verificación TypeScript |
+| `npm run typecheck` / `npm run lint` | Validación estática |
 | `npm test` | Pruebas de seguridad y negocio |
-| `npm run db:migrate` | Aplica migraciones pendientes con lock transaccional |
-| `npm run db:seed` | Carga o actualiza los 22 productos |
+| `npm run build` / `npm run build:api` | Builds de producción |
+| `npm run db:migrate` | Aplica migraciones serializadas con advisory lock |
+| `npm run db:seed` | Reconcilia el catálogo de 22 productos |
+| `npm run db:verify` | Prueba migraciones concurrentes, seed idempotente, RLS y restricciones en una base temporal |
+| `npm run admin:provision` | Crea o actualiza uno de los dos administradores |
 | `npm run security:audit` | Auditoría npm de nivel alto |
 
-## Catálogo
+## Variables por plataforma
 
-`data/catalog.ts` es la representación normalizada y trazable del catálogo. Cada registro conserva catálogo y página de origen. `scripts/extract_catalog_assets.py` extrae las fotografías incrustadas de los PDFs y las convierte a WebP; requiere Pillow y pypdf. Los campos que el material no proporciona no se inventan.
+**Vercel:** `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WHATSAPP_NUMBER`, `PUBLIC_API_URL`, `HEALTHCHECK_SECRET` y `CRON_SECRET`. `CRON_SECRET` protege automáticamente la llamada programada de Vercel y no se comparte con el navegador.
 
-## Base de datos
+**Render:** `DATABASE_URL`, `DATABASE_SSL`, `DATABASE_CA_CERT` si aplica, `WEB_ORIGIN`, `PUBLIC_API_URL`, `IP_HASH_SECRET`, `ORDER_TOKEN_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WHATSAPP_NUMBER`, `HEALTHCHECK_SECRET`, variables del proveedor de correo y `EXPECTED_ADMIN_COUNT=2`.
 
-La migración `migrations/001_initial.sql` crea identidades, perfiles, roles, productos, categorías, promociones, pedidos, sesiones, tokens, idempotencia y auditoría. Incluye claves foráneas, restricciones, índices y RLS. En producción usa un usuario de aplicación que no sea propietario de las tablas ni tenga `BYPASSRLS`.
+`HEALTHCHECK_SECRET` debe ser el mismo en Vercel y Render. `WEB_ORIGIN` debe contener únicamente los orígenes HTTPS reales de Vercel. Los números públicos y privados de WhatsApp deben representar el mismo destino.
 
-Para conceder el primer administrador, realiza el cambio una sola vez con una cuenta de migración, insertando en `user_roles` el `user_id` y el rol `admin`. No expongas un endpoint de “convertirme en admin”.
+## Base de datos y despliegue
 
-## Despliegue
+Ejecuta migraciones y seed con una credencial propietaria/de migración. Luego configura la API con un rol `celestial_app` que tenga `LOGIN`, no sea propietario, no sea superusuario y no posea `BYPASSRLS`. Las migraciones 006–013 revocan privilegios genéricos, restringen el rol y fortalecen RLS; el arranque de producción comprueba además que el esquema esté actualizado.
 
-- Web: Cloudflare Sites/Pages, Vercel o Netlify.
-- API: Render, Railway, Fly.io o un VPS con `Dockerfile.api`.
-- Datos: PostgreSQL administrado o Supabase.
-- Los contenedores `Dockerfile.web` y `Dockerfile.api` ejecutan como usuario sin privilegios.
-- Configura secretos desde el panel del proveedor, nunca en el repositorio.
-- Habilita health checks sobre `/health` y termina TLS en el proxy. La API rechaza o redirige HTTP en producción según `PUBLIC_API_URL`.
-- Ejecuta migraciones como una tarea de release separada y con credenciales de migración; la aplicación debe usar una cuenta restringida.
+Secuencia de release recomendada:
 
-## Operación segura
+1. Crear backup/exportación verificable.
+2. Desplegar migraciones con la credencial de migración.
+3. Ejecutar seed.
+4. Aprovisionar exactamente dos administradores.
+5. Cambiar `DATABASE_URL` de Render al rol restringido `celestial_app`.
+6. Desplegar la API y validar `/health`.
+7. Desplegar la web y validar `/api/health` desde Vercel.
 
-- Haz backup automático y pruebas periódicas de restauración.
-- Activa protección de ramas, Dependabot/Renovate y secret scanning.
-- El workflow `.github/workflows/security.yml` ejecuta build, pruebas, `npm audit` y Gitleaks.
-- Si un secreto entra en Git: revócalo/rota primero, elimínalo del código, reemplázalo por variable de entorno y limpia el historial solo después de confirmar la rotación.
-- No almacenes CVV ni tarjetas. La integración futura de pagos debe tokenizar con el proveedor y verificar firmas e idempotencia del webhook.
+La migración 010 elimina cachés de idempotencia antiguos que podían contener credenciales de pedido. Realiza ese release en una ventana sin checkouts en curso.
 
-Consulta `SECURITY.md` para el modelo de amenazas y las decisiones de hardening.
+## Flujo de compra
+
+El servidor consulta productos activos, valida opciones, rechaza productos “solo cotización”, bloquea precios y calcula totales dentro de una transacción. Al confirmar, guarda el pedido y devuelve un enlace oficial `wa.me`; el navegador conserva durante 24 horas, solo en la pestaña, el token que permite consultar ese pedido. El token en claro no se guarda en PostgreSQL.
+
+El cliente no debe transferir hasta que un administrador confirme el envío. Solo entonces aparecen instrucciones de pago y se habilita el comprobante. Los comprobantes usan firmas de archivo reales y un bucket privado; el panel recibe una URL firmada de cinco minutos.
+
+Las promociones son borradores inactivos: el esquema y la API impiden activarlas hasta que exista cálculo de descuentos auditado en el servidor.
+
+## Operación
+
+Vercel llama diariamente a `/api/health`, que reenvía una solicitud protegida a `/health/database`; la comprobación ejecuta exactamente `SELECT 1`. Es una ayuda de disponibilidad, no una garantía contractual contra la pausa del plan gratuito de Supabase. El plan gratuito tampoco ofrece backups automáticos: programa exportaciones manuales verificadas o usa un plan con backups.
+
+El directorio personal `Claude outputs/`, archivos `.env` y artefactos locales están ignorados para reducir el riesgo de publicar información privada. Si un secreto entra en Git, revócalo primero y limpia el historial después.
+
+Consulta `SECURITY.md` y `docs/ARCHITECTURE.md` antes de publicar.

@@ -11,9 +11,18 @@ export function orderRoutes(service: OrderService) {
   const router = Router();
 
   router.get('/', requireAuth, async (request, response) => response.json({ orders: await service.list(request.auth!) }));
+  router.get('/:id/guest', orderLimit, async (request, response) => {
+    const orderId = String(request.params.id);
+    const guestToken = request.get('x-order-token') ?? '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)
+      || guestToken.length < 32 || guestToken.length > 200) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+    const order = await service.getGuest(orderId, guestToken);
+    if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+    response.json({ order });
+  });
   router.get('/:id', requireAuth, async (request, response) => {
     const orderId = String(request.params.id);
-    if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
     const order = await service.get(request.auth!, orderId);
     if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
     response.json({ order });
@@ -29,7 +38,7 @@ export function orderRoutes(service: OrderService) {
   });
   router.post('/:id/receipt', orderLimit, requireCsrfIfAuthenticated, upload.single('file'), async (request, response) => {
     const orderId = String(request.params.id);
-    if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
     if (!request.file) throw new HttpError(400, 'Falta una imagen válida (jpeg, png o webp, máx. 5MB).', 'INVALID_FILE');
     const guestToken = request.get('x-order-token');
     response.status(201).json({ order: await service.attachReceipt(request.auth ?? null, orderId, request.file, guestToken) });

@@ -13,11 +13,11 @@ const columnMap: Record<string, string> = {
   slug: 'slug', name: 'name', description: 'description', priceCop: 'price_cop',
   priceMaxCop: 'price_max_cop', priceLabel: 'price_label', imagePath: 'image_path',
   dimensions: 'dimensions', weight: 'weight', colors: 'colors', fragrances: 'fragrances',
-  options: 'options', features: 'features', availability: 'availability', collection: 'collection',
-  featured: 'featured', popular: 'popular', active: 'active',
+  options: 'options', optionPrices: 'option_prices', features: 'features', availability: 'availability', collection: 'collection',
+  featured: 'featured', popular: 'popular', active: 'active', requiresConsultation: 'requires_consultation',
 };
 
-const jsonFields = new Set(['colors', 'fragrances', 'options', 'features']);
+const jsonFields = new Set(['colors', 'fragrances', 'options', 'optionPrices', 'features']);
 
 export class PostgresAdminService implements AdminService {
   constructor(private pool: Pool, private env: AppEnv) {}
@@ -40,7 +40,7 @@ export class PostgresAdminService implements AdminService {
           (SELECT count(*)::int FROM products WHERE active) AS "activeProducts",
           (SELECT count(*)::int FROM orders WHERE status = 'pending') AS "pendingOrders",
           (SELECT count(*)::int FROM orders WHERE payment_status = 'pending_verification') AS "pendingPaymentVerification",
-          (SELECT count(*)::int FROM users WHERE status = 'active') AS customers,
+          (SELECT count(*)::int FROM orders WHERE created_at >= date_trunc('day', now())) AS "ordersToday",
           (SELECT COALESCE(sum(total_cop), 0)::int FROM orders WHERE status IN ('confirmed','preparing','shipped','completed')) AS "confirmedRevenueCop"`,
       );
       return result.rows[0];
@@ -51,10 +51,20 @@ export class PostgresAdminService implements AdminService {
     return withAuthContext(this.pool, auth, async (client) => {
       const result = await client.query(
         `SELECT o.id, o.order_number AS "orderNumber", o.status, o.payment_status AS "paymentStatus",
-                o.receipt_path AS "receiptPath", o.total_cop AS "totalCop", o.created_at AS "createdAt",
+                o.receipt_path AS "receiptPath", o.subtotal_cop AS "subtotalCop", o.shipping_cop AS "shippingCop",
+                o.total_cop AS "totalCop", (o.shipping_confirmed_at IS NOT NULL) AS "shippingConfirmed", o.created_at AS "createdAt",
                 COALESCE(u.email::text, o.guest_email::text) AS email,
                 COALESCE(p.full_name, o.shipping_address->>'fullName') AS "customerName",
-                (o.user_id IS NULL) AS "isGuest"
+                (o.user_id IS NULL) AS "isGuest", o.shipping_address AS "shippingAddress",
+                o.customer_note AS "customerNote",
+                COALESCE((
+                  SELECT jsonb_agg(jsonb_build_object(
+                    'productName', oi.product_name, 'quantity', oi.quantity,
+                    'unitPriceCop', oi.unit_price_cop, 'lineTotalCop', oi.line_total_cop,
+                    'selectedOptions', oi.selected_options
+                  ) ORDER BY oi.created_at)
+                  FROM order_items oi WHERE oi.order_id = o.id
+                ), '[]'::jsonb) AS items
            FROM orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN profiles p ON p.user_id = u.id
           ORDER BY o.created_at DESC LIMIT 200`,
       );
@@ -62,6 +72,17 @@ export class PostgresAdminService implements AdminService {
         ...order,
         receiptUrl: receiptPath ? await getSignedReceiptUrl(this.env, receiptPath) : null,
       })));
+    });
+  }
+
+  async getOrderNotifications(auth: AuthContext, afterOrderNumber: number) {
+    return withAuthContext(this.pool, auth, async (client) => {
+      const result = await client.query(
+        `SELECT id, order_number AS "orderNumber", created_at AS "createdAt"
+           FROM orders WHERE order_number > $1 ORDER BY order_number ASC LIMIT 20`,
+        [afterOrderNumber],
+      );
+      return result.rows;
     });
   }
 
@@ -102,12 +123,45 @@ export class PostgresAdminService implements AdminService {
   async updateOrder(auth: AuthContext, orderId: string, input: unknown) {
     const status = (input as { status: string }).status;
     return withAuthContext(this.pool, auth, async (client) => {
-      const result = await client.query(
-        'UPDATE orders SET status = $2 WHERE id = $1 RETURNING id, order_number AS "orderNumber", status, total_cop AS "totalCop"',
-        [orderId, status],
+      const current = await client.query<{ status: string; payment_status: string; shipping_confirmed_at: Date | null }>(
+        'SELECT status, payment_status, shipping_confirmed_at FROM orders WHERE id = $1 FOR UPDATE', [orderId],
       );
-      if (!result.rows[0]) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+      const order = current.rows[0];
+      if (!order) throw new HttpError(404, 'Pedido no encontrado.', 'NOT_FOUND');
+      const transitions: Record<string, string[]> = {
+        pending: ['confirmed', 'cancelled'], confirmed: ['preparing', 'cancelled'],
+        preparing: ['shipped', 'cancelled'], shipped: ['completed', 'cancelled'], completed: [], cancelled: [],
+      };
+      if (status !== order.status && !transitions[order.status]?.includes(status)) {
+        throw new HttpError(409, 'Ese cambio de estado no está permitido.', 'INVALID_ORDER_TRANSITION');
+      }
+      if (status !== 'pending' && status !== 'cancelled' && !order.shipping_confirmed_at) {
+        throw new HttpError(409, 'Confirma primero el valor del envío.', 'SHIPPING_NOT_CONFIRMED');
+      }
+      if (['preparing', 'shipped', 'completed'].includes(status) && order.payment_status !== 'verified') {
+        throw new HttpError(409, 'Verifica primero el pago.', 'PAYMENT_NOT_VERIFIED');
+      }
+      const result = await client.query(
+        'UPDATE orders SET status = $2 WHERE id = $1 RETURNING id, order_number AS "orderNumber", status, total_cop AS "totalCop"', [orderId, status],
+      );
       await this.audit(client, auth, 'order.status_changed', 'order', orderId, { status });
+      return result.rows[0];
+    });
+  }
+
+  async confirmShipping(auth: AuthContext, orderId: string, shippingCop: number) {
+    return withAuthContext(this.pool, auth, async (client) => {
+      const result = await client.query(
+        `UPDATE orders
+            SET shipping_cop = $2, total_cop = subtotal_cop - discount_cop + $2,
+                shipping_confirmed_at = now(), status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END
+          WHERE id = $1 AND status NOT IN ('cancelled', 'completed') AND payment_status IN ('pending', 'rejected')
+          RETURNING id, order_number AS "orderNumber", status, shipping_cop AS "shippingCop",
+                    total_cop AS "totalCop", true AS "shippingConfirmed"`,
+        [orderId, shippingCop],
+      );
+      if (!result.rows[0]) throw new HttpError(409, 'No se puede cambiar el envío en el estado actual del pedido.', 'SHIPPING_UPDATE_NOT_ALLOWED');
+      await this.audit(client, auth, 'order.shipping_confirmed', 'order', orderId, { shippingCop });
       return result.rows[0];
     });
   }
@@ -157,17 +211,17 @@ export class PostgresAdminService implements AdminService {
       const result = await client.query(
         `INSERT INTO products (
            external_id, slug, name, description, price_cop, price_max_cop, price_label, image_path,
-           dimensions, weight, colors, fragrances, options, features, availability, collection,
-           source_catalog, source_page, featured, popular, active
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb,$15,$16,$16,1,$17,$18,$19)
+           dimensions, weight, colors, fragrances, options, option_prices, features, availability, collection,
+           source_catalog, source_page, featured, popular, active, requires_consultation
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16,$17,$17,1,$18,$19,$20,$21)
          RETURNING id, slug, name, price_cop AS "priceCop", active`,
         [
           externalId, product.slug, product.name, product.description, product.priceCop,
           product.priceMaxCop ?? null, product.priceLabel ?? null, product.imagePath,
           product.dimensions ?? null, product.weight ?? null, JSON.stringify(product.colors ?? []),
-          JSON.stringify(product.fragrances ?? []), JSON.stringify(product.options ?? []), JSON.stringify(product.features ?? []),
+          JSON.stringify(product.fragrances ?? []), JSON.stringify(product.options ?? []), JSON.stringify(product.optionPrices ?? {}), JSON.stringify(product.features ?? []),
           product.availability ?? 'Hecho bajo pedido', product.collection ?? 'general', product.featured ?? false,
-          product.popular ?? false, product.active ?? true,
+          product.popular ?? false, product.active ?? true, product.requiresConsultation ?? false,
         ],
       );
       if (typeof product.categoryId === 'string') {
@@ -209,6 +263,13 @@ export class PostgresAdminService implements AdminService {
   async updateCategory(auth: AuthContext, categoryId: string, rawInput: unknown) {
     const input = rawInput as { slug: string; name: string; description?: string | null; active: boolean; sortOrder: number };
     return withAuthContext(this.pool, auth, async (client) => {
+      if (!input.active) {
+        const assigned = await client.query(
+          `SELECT 1 FROM product_categories pc JOIN products p ON p.id = pc.product_id
+            WHERE pc.category_id = $1 AND p.active = true LIMIT 1`, [categoryId],
+        );
+        if (assigned.rowCount) throw new HttpError(409, 'Reasigna o desactiva los productos activos antes de desactivar esta categoría.', 'CATEGORY_IN_USE');
+      }
       const result = await client.query(
         `UPDATE categories SET slug=$2, name=$3, description=$4, active=$5, sort_order=$6 WHERE id=$1
          RETURNING id, slug, name, description, active, sort_order AS "sortOrder"`,

@@ -1,66 +1,65 @@
 # Arquitectura de Celestial
 
-## Objetivo y límites
+## Componentes
 
-Celestial se divide en tres superficies desplegables y sustituibles:
-
-1. **Web**: aplicación Next/Vinext accesible y responsive. Renderiza el catálogo público, pero nunca decide precios, permisos ni estados de pedidos.
-2. **API**: servicio Node.js + Express bajo `/api`. Valida entradas, autentica sesiones, aplica RBAC y propiedad de recursos, recalcula pedidos y registra auditoría.
-3. **Datos**: PostgreSQL como fuente de verdad. Migraciones SQL reproducibles, consultas parametrizadas y RLS como segunda barrera de autorización.
-
-Las imágenes son archivos estáticos optimizados. La columna `image_path` permite migrarlas a almacenamiento de objetos sin cambiar el dominio de productos.
-
-## Flujo de seguridad
-
-- El navegador recibe únicamente una cookie de sesión opaca, aleatoria, `HttpOnly`, `Secure` en producción y `SameSite=Lax`.
-- La base de datos guarda SHA-256 del token de sesión, nunca el token original.
-- Las operaciones mutables exigen además un token CSRF asociado a la sesión y validación de `Origin`.
-- Las contraseñas se procesan con Argon2id; los requisitos y límites se validan también en servidor.
-- El rol y el usuario efectivo se obtienen de la sesión. Nunca se aceptan `role`, `isAdmin`, `userId`, `price`, `discount` o `total` como autoridad del cliente.
-- Cada pedido consulta productos activos dentro de una transacción, bloquea sus filas, toma precios vigentes y calcula subtotal, descuentos y total en servidor.
-- Las consultas de recursos de usuario incluyen siempre su propietario; RLS repite ese control mediante contexto de transacción.
-- Los cambios administrativos relevantes generan un registro de auditoría sin secretos ni cuerpos de solicitudes.
-
-## Módulos de la API
+1. **Web Next.js / Vercel:** catálogo, carrito, checkout invitado, consulta de pedido y panel administrativo. No decide precios ni permisos.
+2. **API Express / Render:** autenticación de dos administradores, CSRF/RBAC, reglas de pedido, archivos, auditoría y adaptadores externos.
+3. **PostgreSQL + Storage / Supabase:** fuente de verdad, RLS, migraciones y objetos públicos/privados.
 
 ```text
-server/
-├── app.ts                 # composición de Express
-├── server.ts              # proceso HTTP y cierre ordenado
-├── config/                # variables de entorno tipadas
-├── database/              # pool, transacciones y contexto RLS
-├── middleware/            # sesión, CSRF, RBAC, errores, límites
-├── repositories/          # SQL parametrizado
-├── routes/                # auth, catálogo, pedidos y administración
-├── services/              # reglas de negocio y adaptadores de correo
-├── security/              # tokens, hashing y comparación segura
-└── validators/            # esquemas Zod y listas permitidas
+Navegador ──HTTPS──> Vercel (Next.js)
+    │                       │ cron diario + secreto
+    └──────HTTPS────────> Render (Express) ──TLS/RLS──> Supabase
+                                  │
+                                  ├── enlace wa.me después del commit
+                                  └── proveedor HTTP de correo (solo admins)
 ```
 
-## Modelo de datos
+## Confianzas y límites
 
-- `users`, `profiles`, `roles`, `user_roles`: identidad y RBAC sin duplicar datos de perfil.
-- `categories`, `products`, `product_images`, `product_categories`: catálogo y relaciones de clasificación.
-- `promotions`: reglas promocionales administrables, inactivas por defecto.
-- `orders`, `order_items`: pedido y líneas con snapshot de nombre/precio para conservar el historial.
-- `sessions`, `email_verification_tokens`, `password_reset_tokens`: credenciales revocables y de expiración corta.
-- `audit_logs`: trazabilidad administrativa.
-- `idempotency_keys`: evita duplicación futura de checkout y webhooks.
+- El navegador no es autoridad para precio, total, rol, estado ni propiedad.
+- Render guarda los secretos. Vercel solo recibe variables públicas y los secretos necesarios para el proxy de salud.
+- `celestial_app` es el rol de ejecución de la API. Una credencial propietaria separada ejecuta migraciones, seed y aprovisionamiento.
+- La API establece contexto transaccional para RLS. Restricciones, claves foráneas, estados y permisos de esquema repiten las reglas críticas.
 
-## Despliegue recomendado
+## Pedido invitado
 
-- Web: Cloudflare Pages/Sites, Vercel o Netlify.
-- API: Render, Railway, Fly.io o VPS detrás de HTTPS.
-- Datos: PostgreSQL administrado o Supabase. El backend utiliza `DATABASE_URL`; no importa APIs específicas del proveedor.
-- En producción, web y API deben compartir un dominio de sitio o una lista CORS explícita. HSTS se activa solo tras verificar HTTPS de extremo a extremo.
+```text
+Carrito canónico
+  → clave de idempotencia por huella SHA-256
+  → transacción: productos activos + opciones + precios + filas bloqueadas
+  → pedido confirmado en PostgreSQL
+  → token HMAC entregado al navegador, solo hash en DB
+  → enlace wa.me
+  → admin confirma costo de envío
+  → cliente consulta estado y carga comprobante
+  → admin verifica pago y avanza el pedido
+```
 
-## Amenazas principales consideradas
+Los productos `requires_consultation` no entran al carrito. Las promociones existen como borradores, pero una restricción impide activarlas. Los snapshots de nombre/precio en `order_items` preservan el historial.
 
-- Control de acceso roto e IDOR: propiedad en consultas, middleware y RLS.
-- Inyección: Zod, listas permitidas y parámetros de `pg`.
-- XSS: React escapa texto, CSP restrictiva y ausencia de HTML arbitrario.
-- CSRF: cookie `SameSite`, token por sesión y comprobación de origen.
-- Fuerza bruta: límites distintos por IP/cuenta, contador persistente y bloqueo temporal.
-- Manipulación de precios: recálculo transaccional desde PostgreSQL.
-- Filtración de secretos: entorno validado, `.env` ignorado y ejemplos sin valores.
-- Duplicación de pagos: claves de idempotencia y diseño de webhook con firma verificable.
+## Administración
+
+El backend resuelve la sesión y rol desde PostgreSQL. Cookie opaca, CSRF y comprobación de origen protegen escrituras. El panel sondea pedidos únicamente cuando la pestaña es visible, sin solicitudes solapadas, y limpia datos sensibles ante 401/403.
+
+La máquina de estados permite avanzar, no saltar: `pending → confirmed → preparing → shipped → completed`, con cancelación desde estados no terminales. Preparar, enviar o completar requiere pago verificado.
+
+## Operación y salud
+
+`GET /health` prueba vida del proceso sin tocar la base. El cron diario de Vercel llama a su `/api/health`, que presenta `HEALTHCHECK_SECRET` a `GET /health/database`; este último ejecuta exactamente `SELECT 1`. Así una caída de PostgreSQL no reinicia ciegamente la API, pero queda detectada por la comprobación programada.
+
+Las migraciones usan advisory lock de sesión, revalidan dentro del lock y desactivan los timeouts de consulta del pool de aplicación. `db:verify` crea una base temporal con nombre aleatorio, prueba dos migradores concurrentes, seed idempotente, RLS y restricciones, y elimina exclusivamente esa base.
+
+## Datos principales
+
+- `users`, `profiles`, `roles`, `user_roles`, `sessions`, `password_reset_tokens`: identidad administrativa.
+- `categories`, `products`, `product_images`, `product_categories`: catálogo.
+- `orders`, `order_items`, `idempotency_keys`: checkout y continuidad invitada.
+- `payment_settings`, `promotions`, `audit_logs`: operación administrativa.
+
+## Decisiones externas
+
+- **WhatsApp:** enlace oficial `wa.me`; sin costo de API y sin dependencia de plantillas. El pedido se confirma antes de generar el enlace.
+- **Notificaciones:** polling ligero de 30 segundos en el panel visible; no requiere infraestructura push.
+- **Salud:** cron diario, compatible con límites de Vercel Hobby. No se considera sustituto de uptime monitoring.
+- **Archivos:** Supabase Storage; catálogo público y comprobantes privados con firma temporal.

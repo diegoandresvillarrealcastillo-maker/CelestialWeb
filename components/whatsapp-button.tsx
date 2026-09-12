@@ -1,10 +1,10 @@
 import { FaWhatsapp } from 'react-icons/fa';
+import { whatsappUrl } from '@/lib/site-config';
 
-const companyNumber = '573205279249';
 const greeting = '¡Hola! ✨ Estuve viendo su tienda online Celestial y me encantaron varios productos. ¿Me podrían ayudar a completar mi compra por aquí? 🛍️';
 
 export function WhatsAppButton() {
-  const contactUrl = `https://wa.me/${companyNumber}?text=${encodeURIComponent(greeting)}`;
+  const contactUrl = whatsappUrl(greeting);
 
   return (
     <a

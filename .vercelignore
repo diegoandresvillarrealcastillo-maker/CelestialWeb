@@ -1,0 +1,7 @@
+.env*
+Claude outputs
+dist
+dist-api
+coverage
+tmp
+uploads

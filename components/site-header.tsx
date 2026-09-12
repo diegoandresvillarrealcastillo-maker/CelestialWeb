@@ -22,7 +22,7 @@ export function SiteHeader() {
           <Link href="/#cuidados">Cuidados</Link>
         </nav>
         <div className="header-actions">
-          <Link className="text-action" href="/cuenta">Mi cuenta</Link>
+          <Link className="mobile-catalog-action" href="/catalogo">Catálogo</Link>
           <Link className="bag-action" href="/carrito" aria-label={`Abrir carrito, ${count} productos`}>
             <span>Bolsa</span><b aria-hidden="true">{count}</b>
           </Link>

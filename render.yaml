@@ -19,17 +19,25 @@ services:
         sync: false
       - key: IP_HASH_SECRET
         sync: false
-      - key: APP_ENCRYPTION_KEY
+      - key: ORDER_TOKEN_SECRET
         sync: false
       - key: WEB_ORIGIN
         sync: false
       - key: PUBLIC_API_URL
         sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: TURNSTILE_SECRET_KEY
-        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: WHATSAPP_NUMBER
+        sync: false
+      - key: HEALTHCHECK_SECRET
+        sync: false
+      - key: EMAIL_PROVIDER_URL
+        sync: false
+      - key: EMAIL_PROVIDER_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EXPECTED_ADMIN_COUNT
+        value: "2"

@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   title: { default: 'Celestial Velas | Velas artesanales en Colombia', template: '%s | Celestial Velas' },
   description: 'Celestial Velas crea velas artesanales en cera vegetal, bouquets y recordatorios personalizados hechos en Colombia.',
   keywords: ['Celestial Velas', 'Velas Celestial', 'velas artesanales', 'velas aromáticas', 'bouquets de velas', 'recordatorios personalizados', 'Colombia'],
-  alternates: { canonical: '/' },
+  icons: { icon: '/favicon.svg' },
   openGraph: {
     title: 'Celestial Velas | Velas artesanales en Colombia',
     description: 'Luz, aroma y arte hechos con intención por Celestial Velas.',
     type: 'website', locale: 'es_CO', siteName: 'Celestial Velas Artesanales',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Celestial, velas artesanales' }],
+    images: [{ url: '/og.png', width: 1730, height: 909, alt: 'Celestial, velas artesanales' }],
   },
   twitter: { card: 'summary_large_image', title: 'Celestial Velas | Velas artesanales en Colombia', description: 'Luz, aroma y arte hechos con intención por Celestial Velas.', images: ['/og.png'] },
 };

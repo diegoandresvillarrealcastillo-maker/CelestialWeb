@@ -8,6 +8,7 @@ export type AuthContext = {
   email: string;
   roles: string[];
   fullName: string | null;
+  phone: string | null;
   emailVerified: boolean;
 };
 
@@ -16,7 +17,7 @@ export type DbExecutor = Pick<PoolClient, 'query'>;
 export type SessionResult = {
   token: string;
   csrfToken: string;
-  user: Pick<AuthContext, 'userId' | 'email' | 'roles' | 'fullName' | 'emailVerified'>;
+  user: Pick<AuthContext, 'userId' | 'email' | 'roles' | 'fullName' | 'phone' | 'emailVerified'>;
 };
 
 declare global {

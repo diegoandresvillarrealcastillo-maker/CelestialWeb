@@ -1,7 +1,11 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { ProductCard } from '@/components/product-card';
 import { catalogFacts } from '@/data/catalog';
 import { getAllProducts } from '@/lib/catalog-api';
+import { whatsappDisplayNumber, whatsappUrl } from '@/lib/site-config';
+
+export const metadata: Metadata = { alternates: { canonical: '/' } };
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 const organizationData = {
@@ -10,8 +14,8 @@ const organizationData = {
   name: 'Celestial Velas Artesanales',
   alternateName: ['Celestial Velas', 'Velas Celestial'],
   url: siteUrl,
-  logo: `${siteUrl}/og.png`,
-  telephone: '+57 320 527 9249',
+  logo: `${siteUrl}/images/products/logo-celestial.webp`,
+  telephone: whatsappDisplayNumber,
   areaServed: { '@type': 'Country', name: 'Colombia' },
   sameAs: ['https://instagram.com/celestialvelasart'],
 };
@@ -22,13 +26,17 @@ const categoryTiles = [
 ];
 
 export default async function Home() {
-  const products = await getAllProducts();
+  const catalog = await getAllProducts()
+    .then((products) => ({ products, unavailable: false }))
+    .catch(() => ({ products: [], unavailable: true }));
+  const products = catalog.products;
   const featured = products.filter((product) => product.featured).slice(0, 4);
   const popular = products.filter((product) => product.popular).slice(0, 4);
   const productCount = products.length;
   return (
     <main>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData).replace(/</g, '\\u003c') }} />
+      {catalog.unavailable && <section className="catalog-unavailable" role="status"><b>El catálogo está temporalmente fuera de línea.</b><span>No mostramos una lista vacía ni precios en caché: vuelve a intentarlo en unos minutos.</span></section>}
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow"><span /> Aromas que guardan momentos</p>
@@ -67,7 +75,7 @@ export default async function Home() {
 
       <section className="benefits-strip" aria-label="Beneficios"><div><span>✦</span><b>Personalización</b><p>Color, aroma y detalles a elección</p></div><div><span>◌</span><b>Cera vegetal</b><p>Materiales seleccionados con cuidado</p></div><div><span>⌂</span><b>Hecho en Colombia</b><p>Producción artesanal bajo pedido</p></div><div><span>♡</span><b>Atención cercana</b><p>Te acompañamos en cada elección</p></div></section>
 
-      <section className="faq-section" id="faq"><div><p className="eyebrow"><span /> Preguntas frecuentes</p><h2>Antes de encender<br />tu próxima historia.</h2><p>¿Aún tienes dudas? Escríbenos y diseñamos contigo el detalle ideal.</p><a className="text-link" href="https://wa.me/573205279249" target="_blank" rel="noreferrer">Hablar con Celestial →</a></div><div className="faq-list"><details open><summary>¿Puedo elegir el color y el aroma?<span>+</span></summary><p>Sí. Cada producto muestra las opciones disponibles en el catálogo. Los diseños bajo pedido se confirman antes de elaborar.</p></details><details><summary>¿Cuánto tarda mi pedido?<span>+</span></summary><p>Para la colección navideña, entre 2 y 10 días hábiles según ubicación y cantidad. Los demás pedidos se confirman individualmente.</p></details><details><summary>¿El envío está incluido?<span>+</span></summary><p>No. Se calcula según la ciudad, el peso y la cantidad del pedido.</p></details><details><summary>¿Cómo confirmo la compra?<span>+</span></summary><p>Arma tu bolsa, crea el pedido y recibirás la confirmación. También puedes consultar directamente por WhatsApp.</p></details></div></section>
+      <section className="faq-section" id="faq"><div><p className="eyebrow"><span /> Preguntas frecuentes</p><h2>Antes de encender<br />tu próxima historia.</h2><p>¿Aún tienes dudas? Escríbenos y diseñamos contigo el detalle ideal.</p><a className="text-link" href={whatsappUrl()} target="_blank" rel="noreferrer">Hablar con Celestial →</a></div><div className="faq-list"><details open><summary>¿Puedo elegir el color y el aroma?<span>+</span></summary><p>Sí. Cada producto muestra las opciones disponibles en el catálogo. Los diseños bajo pedido se confirman antes de elaborar.</p></details><details><summary>¿Cuánto tarda mi pedido?<span>+</span></summary><p>Para la colección navideña, entre 2 y 10 días hábiles según ubicación y cantidad. Los demás pedidos se confirman individualmente.</p></details><details><summary>¿El envío está incluido?<span>+</span></summary><p>No. Se calcula según la ciudad, el peso y la cantidad del pedido.</p></details><details><summary>¿Cómo confirmo la compra?<span>+</span></summary><p>Arma tu bolsa, crea el pedido y recibirás la confirmación. También puedes consultar directamente por WhatsApp.</p></details></div></section>
     </main>
   );
 }

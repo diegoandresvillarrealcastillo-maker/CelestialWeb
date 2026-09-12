@@ -7,21 +7,30 @@ import { getAllProducts, getProductBySlug } from '@/lib/catalog-api';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
-  if (!product) return { title: 'Producto no encontrado', openGraph: { images: [] }, twitter: { images: [] } };
-  return {
-    title: product.name,
-    description: product.description,
-    openGraph: { title: product.name, description: product.description, type: 'website', images: [{ url: product.image, alt: product.name }] },
-    twitter: { card: 'summary_large_image', title: product.name, description: product.description, images: [product.image] },
-  };
+  try {
+    const product = await getProductBySlug(slug);
+    if (!product) return { title: 'Producto no encontrado', robots: { index: false, follow: false }, openGraph: { images: [] }, twitter: { images: [] } };
+    return {
+      title: product.name,
+      description: product.description,
+      alternates: { canonical: `/producto/${slug}` },
+      openGraph: { title: product.name, description: product.description, type: 'website', images: [{ url: product.image, alt: product.name }] },
+      twitter: { card: 'summary_large_image', title: product.name, description: product.description, images: [product.image] },
+    };
+  } catch {
+    return { title: 'Producto temporalmente no disponible', robots: { index: false, follow: false }, openGraph: { images: [] }, twitter: { images: [] } };
+  }
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const productResult = await getProductBySlug(slug)
+    .then((product) => ({ product, unavailable: false }))
+    .catch(() => ({ product: null, unavailable: true }));
+  if (productResult.unavailable) return <main className="product-page"><section className="page-hero compact"><h1>Producto temporalmente no disponible</h1><p>No pudimos consultar su información y precio vigente. Intenta de nuevo en unos minutos.</p><Link className="button button-primary" href={`/producto/${encodeURIComponent(slug)}`}>Reintentar</Link></section></main>;
+  const product = productResult.product;
   if (!product) notFound();
-  const allProducts = await getAllProducts();
+  const allProducts = await getAllProducts().catch(() => []);
   const related = allProducts.filter((item) => item.id !== product.id && (item.category === product.category || item.collection === product.collection)).slice(0, 4);
   const gallery = product.images ?? [product.image];
   const structuredData = { '@context': 'https://schema.org', '@type': 'Product', name: product.name, description: product.description, image: gallery, offers: { '@type': 'Offer', priceCurrency: 'COP', price: product.priceCop, availability: 'https://schema.org/PreOrder' }, brand: { '@type': 'Brand', name: 'Celestial' } };

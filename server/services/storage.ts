@@ -12,21 +12,37 @@ function assertConfigured(env: AppEnv): asserts env is ConfiguredEnv {
 }
 
 async function ensureBucket(env: ConfiguredEnv, bucket: string, isPublic: boolean) {
-  await fetch(`${env.SUPABASE_URL}/storage/v1/bucket`, {
+  const response = await fetch(`${env.SUPABASE_URL}/storage/v1/bucket`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'content-type': 'application/json' },
     body: JSON.stringify({ id: bucket, name: bucket, public: isPublic }),
   });
+  if (!response.ok && response.status !== 409) throw new HttpError(502, 'No fue posible preparar el almacenamiento.', 'STORAGE_SETUP_FAILED');
+}
+
+const imageTypes = {
+  'image/jpeg': { extension: 'jpg', matches: (buffer: Buffer) => buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff },
+  'image/png': { extension: 'png', matches: (buffer: Buffer) => buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  'image/webp': { extension: 'webp', matches: (buffer: Buffer) => buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP' },
+} as const;
+
+export function detectImageMime(buffer: Buffer): keyof typeof imageTypes | null {
+  const found = Object.entries(imageTypes).find(([, signature]) => signature.matches(buffer));
+  return found?.[0] as keyof typeof imageTypes | undefined ?? null;
 }
 
 async function uploadFile(env: AppEnv, bucket: string, isPublic: boolean, pathPrefix: string, file: UploadFile): Promise<string> {
+  const detectedType = detectImageMime(file.buffer);
+  if (!detectedType || detectedType !== file.mimetype.toLowerCase()) {
+    throw new HttpError(400, 'El contenido del archivo no coincide con una imagen JPEG, PNG o WebP válida.', 'INVALID_FILE_CONTENT');
+  }
   assertConfigured(env);
-  const extension = file.originalname.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+  const extension = imageTypes[detectedType].extension;
   const path = `${pathPrefix}${randomUUID()}.${extension}`;
   const upload = async () => fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'content-type': file.mimetype },
-    body: new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }),
+    headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, apikey: env.SUPABASE_SERVICE_ROLE_KEY, 'content-type': detectedType, 'x-upsert': 'false' },
+    body: new Blob([new Uint8Array(file.buffer)], { type: detectedType }),
   });
 
   let response = await upload();

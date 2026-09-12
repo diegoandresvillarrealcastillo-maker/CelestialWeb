@@ -4,10 +4,10 @@ import { requireAuth, requireCsrf, requireRole } from '../middleware/auth.js';
 import { adminLimit } from '../middleware/limits.js';
 import { imageUpload as upload } from '../middleware/upload.js';
 import type { AdminService } from '../services/contracts.js';
-import { adminOrderUpdateSchema, adminPaymentDecisionSchema, adminProductSchema, adminCategorySchema, adminPromotionSchema, paymentSettingsSchema } from '../validators/schemas.js';
+import { adminOrderNotificationQuerySchema, adminOrderUpdateSchema, adminPaymentDecisionSchema, adminProductSchema, adminCategorySchema, adminPromotionSchema, adminShippingSchema, paymentSettingsSchema } from '../validators/schemas.js';
 
 const uuid = (value: string) => {
-  if (!/^[0-9a-f-]{36}$/i.test(value)) throw new HttpError(404, 'Recurso no encontrado.', 'NOT_FOUND');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new HttpError(404, 'Recurso no encontrado.', 'NOT_FOUND');
   return value;
 };
 
@@ -16,9 +16,17 @@ export function adminRoutes(service: AdminService) {
   router.use(adminLimit, requireAuth, requireRole('admin'));
   router.get('/overview', async (request, response) => response.json({ overview: await service.getOverview(request.auth!) }));
   router.get('/orders', async (request, response) => response.json({ orders: await service.listOrders(request.auth!) }));
+  router.get('/orders/notifications', async (request, response) => {
+    const { after } = adminOrderNotificationQuerySchema.parse(request.query);
+    response.json({ orders: await service.getOrderNotifications(request.auth!, after) });
+  });
   router.patch('/orders/:id', requireCsrf, async (request, response) => {
     const input = adminOrderUpdateSchema.parse(request.body);
     response.json({ order: await service.updateOrder(request.auth!, uuid(String(request.params.id)), input) });
+  });
+  router.patch('/orders/:id/shipping', requireCsrf, async (request, response) => {
+    const { shippingCop } = adminShippingSchema.parse(request.body);
+    response.json({ order: await service.confirmShipping(request.auth!, uuid(String(request.params.id)), shippingCop) });
   });
   router.patch('/orders/:id/payment', requireCsrf, async (request, response) => {
     const { decision } = adminPaymentDecisionSchema.parse(request.body);

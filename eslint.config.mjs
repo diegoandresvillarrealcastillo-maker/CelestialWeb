@@ -7,7 +7,7 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     // Catalog imagery is extracted once, resized, and encoded as WebP. Native
-    // <img> keeps those curated crops stable in both Next.js and Vinext builds.
+    // <img> keeps those curated crops stable in the storefront.
     rules: { '@next/next/no-img-element': 'off' },
   },
   globalIgnores(['.next/**', 'out/**', 'build/**', 'dist-api/**', 'next-env.d.ts']),

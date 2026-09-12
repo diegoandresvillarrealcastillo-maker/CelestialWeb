@@ -16,12 +16,14 @@ type ApiProductRow = {
   colors: string[];
   fragrances: string[];
   options: string[];
+  optionPrices?: Record<string, number>;
   features: string[];
   availability: string;
   collection: 'general' | 'navidad';
   featured: boolean;
   popular: boolean;
   referenceImage: boolean;
+  requiresConsultation: boolean;
   categories: string[];
   images: { path: string; alt: string; order: number }[];
 };
@@ -45,33 +47,38 @@ function mapProduct(row: ApiProductRow): CatalogProduct {
     colors: row.colors?.length ? row.colors : undefined,
     fragrances: row.fragrances?.length ? row.fragrances : undefined,
     options: row.options?.length ? row.options : undefined,
+    optionPrices: Object.keys(row.optionPrices ?? {}).length ? row.optionPrices : undefined,
     features: row.features ?? [],
     availability: row.availability,
     source: { catalog: row.collection, page: 1 },
     featured: row.featured,
     popular: row.popular,
     referenceImage: row.referenceImage,
+    requiresConsultation: row.requiresConsultation,
   };
 }
 
 export async function getAllProducts(): Promise<CatalogProduct[]> {
   try {
-    const response = await fetch(`${API_URL}/api/products?limit=100`, { next: { revalidate: 60 } });
-    if (!response.ok) return [];
+    const response = await fetch(`${API_URL}/api/products?limit=100`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) throw new Error(`Catalog API returned ${response.status}`);
     const data = await response.json() as { products: ApiProductRow[] };
     return data.products.map(mapProduct);
-  } catch {
-    return [];
+  } catch (error) {
+    throw new CatalogUnavailableError('No fue posible cargar el catálogo.', { cause: error });
   }
 }
 
 export async function getProductBySlug(slug: string): Promise<CatalogProduct | null> {
   try {
-    const response = await fetch(`${API_URL}/api/products/${encodeURIComponent(slug)}`, { next: { revalidate: 60 } });
-    if (!response.ok) return null;
+    const response = await fetch(`${API_URL}/api/products/${encodeURIComponent(slug)}`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(8_000) });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Catalog API returned ${response.status}`);
     const data = await response.json() as { product: ApiProductRow };
     return mapProduct(data.product);
-  } catch {
-    return null;
+  } catch (error) {
+    throw new CatalogUnavailableError('No fue posible cargar el producto.', { cause: error });
   }
 }
+
+export class CatalogUnavailableError extends Error {}

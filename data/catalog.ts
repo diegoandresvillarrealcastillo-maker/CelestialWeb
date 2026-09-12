@@ -22,6 +22,8 @@ export type CatalogProduct = {
   colors?: string[];
   fragrances?: string[];
   options?: string[];
+  optionPrices?: Record<string, number>;
+  requiresConsultation?: boolean;
   features: string[];
   availability: string;
   source: { catalog: 'general' | 'navidad'; page: number };
@@ -58,7 +60,7 @@ export const products: CatalogProduct[] = [
     priceCop: 25000, image: image('vela-wax-melts-160g'), weight: '160 g',
     fragrances: ['Frutos rojos', 'Maracuyá', 'Vainilla'], options: ['Estrellas', 'Corazones', 'Nubes'],
     features: ['Hasta 2 diseños de wax melts', 'Envase de vidrio', 'Tapa de bambú', 'Cera 100% vegetal'],
-    availability: 'Hecho bajo pedido', source: { catalog: 'general', page: 5 }, featured: true,
+    availability: 'Hecho bajo pedido', requiresConsultation: true, source: { catalog: 'general', page: 5 }, featured: true,
   },
   {
     id: 'wax-100', slug: 'vela-wax-melts-100g', name: 'Vela Wax Melts 100 g',
@@ -67,7 +69,7 @@ export const products: CatalogProduct[] = [
     priceCop: 12000, image: image('vela-wax-melts-100g'), weight: '100 g',
     fragrances: ['Frutos rojos', 'Maracuyá', 'Vainilla'], options: ['Corazones', 'Estrellas', 'Nubes'],
     features: ['Hasta 2 diseños de wax melts', 'Envase y tapa de vidrio', 'Cera 100% vegetal'],
-    availability: 'Hecho bajo pedido', source: { catalog: 'general', page: 5 },
+    availability: 'Hecho bajo pedido', requiresConsultation: true, source: { catalog: 'general', page: 5 },
   },
   {
     id: 'bouquet-small', slug: 'bouquet-pequeno', name: 'Bouquet pequeño',
@@ -104,7 +106,7 @@ export const products: CatalogProduct[] = [
     image: image('recordatorios-animales-a'), images: [image('recordatorios-animales-a'), image('recordatorios-animales-b')],
     options: ['Jirafa', 'León', 'Pato', 'Elefante', 'Hipopótamo'],
     features: ['Color a elección', 'Aroma a elección', 'Empaque transparente', 'Tarjeta personalizada'],
-    availability: 'Hecho bajo pedido', source: { catalog: 'general', page: 9 },
+    availability: 'Hecho bajo pedido', requiresConsultation: true, source: { catalog: 'general', page: 9 },
   },
   {
     id: 'rec-bears-cars', slug: 'recordatorios-osos-carritos', name: 'Recordatorios osos y carritos',
@@ -113,7 +115,7 @@ export const products: CatalogProduct[] = [
     priceCop: 10000, image: image('recordatorios-osos'), images: [image('recordatorios-osos'), image('recordatorios-carritos')],
     options: ['Osito cariñosito', 'Carrito'],
     features: ['Color a elección', 'Aroma a elección', 'Empaque transparente', 'Tarjeta personalizada'],
-    availability: 'Hecho bajo pedido', source: { catalog: 'general', page: 9 }, popular: true,
+    availability: 'Hecho bajo pedido', requiresConsultation: true, source: { catalog: 'general', page: 9 }, popular: true,
   },
   {
     id: 'rec-flowers', slug: 'recordatorios-florivelas', name: 'Recordatorios florivelas',
@@ -122,7 +124,7 @@ export const products: CatalogProduct[] = [
     priceCop: 5000, priceMaxCop: 15000, priceLabel: 'Desde $5.000 hasta $15.000 c/u', image: image('recordatorios-flores'),
     options: ['Margarita', 'Girasol', 'Mini peonía', 'Peonía grande', 'Rosa'],
     features: ['Color a elección', 'Aroma a elección', 'Empaque transparente', 'Tarjeta personalizada'],
-    availability: 'Hecho bajo pedido', source: { catalog: 'general', page: 9 }, featured: true,
+    availability: 'Hecho bajo pedido', requiresConsultation: true, source: { catalog: 'general', page: 9 }, featured: true,
   },
   {
     id: 'nav-pine', slug: 'pino-de-navidad', name: 'Pino de Navidad', category: 'Navidad', collection: 'navidad',
@@ -178,7 +180,7 @@ export const products: CatalogProduct[] = [
     description: 'Vela en vaso de vidrio con efecto chantillí y decoración navideña.', priceCop: 25000,
     image: image('vela-postre-chantilli'), dimensions: '7 cm de alto',
     colors: ['Base café', 'Base blanca', 'Chantillí verde', 'Chantillí blanco'],
-    features: ['Vaso de vidrio', 'Efecto chantillí', 'Decoración navideña'], availability: 'Hecho bajo pedido',
+    features: ['Vaso de vidrio', 'Efecto chantillí', 'Decoración navideña'], availability: 'Hecho bajo pedido', requiresConsultation: true,
     source: { catalog: 'navidad', page: 5 }, referenceImage: true,
   },
   {
@@ -194,7 +196,7 @@ export const products: CatalogProduct[] = [
     id: 'nav-tree-glass', slug: 'vaso-arbolito-navideno', name: 'Vaso arbolito navideño', category: 'Navidad', collection: 'navidad',
     description: 'Vaso de policarbonato con arbolito navideño y fragancia a elección.', priceCop: 18000,
     image: image('vaso-arbolito-navideno'), dimensions: 'Vaso de 4 × 4 cm + árbol de 5 cm', colors: ['Tonos pastel', 'Base blanca'],
-    features: ['Vaso de policarbonato', 'Fragancia a elección', 'Arbolito decorativo'], availability: 'Hecho bajo pedido',
+    features: ['Vaso de policarbonato', 'Fragancia a elección', 'Arbolito decorativo'], availability: 'Hecho bajo pedido', requiresConsultation: true,
     source: { catalog: 'navidad', page: 6 }, referenceImage: true,
   },
   {
@@ -202,6 +204,7 @@ export const products: CatalogProduct[] = [
     description: 'Velas artesanales en espiral, disponibles en el tono pastel que elijas.', priceCop: 12000,
     priceLabel: '$12.000 unidad · Kit x3 $30.000', image: image('velas-espiral'), dimensions: '20 cm de alto × 1,5 cm de diámetro',
     colors: ['Tonos pastel a elección'], options: ['Unidad: $12.000', 'Kit x3: $30.000'],
+    optionPrices: { 'Unidad: $12.000': 12000, 'Kit x3: $30.000': 30000 },
     features: ['Color personalizable', 'Disponible por unidad o en kit'], availability: 'Hecho bajo pedido',
     source: { catalog: 'navidad', page: 7 }, referenceImage: true,
   },
@@ -222,7 +225,6 @@ export const catalogFacts = {
   productCount: products.length,
   deliveryTime: '2 a 10 días hábiles para la colección navideña, según ubicación y cantidad',
   shipping: 'El envío se calcula según la ciudad y el peso o cantidad del pedido.',
-  contactPhone: '+57 320 527 9249',
   instagram: '@celestialvelasart',
   care: [
     'En el primer encendido, deja que la cera se derrita hasta cubrir toda la superficie.',

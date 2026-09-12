@@ -48,4 +48,5 @@ next-env.d.ts
 /work/
 /tmp/
 /uploads/
+/Claude outputs/
 tsconfig.tsbuildinfo

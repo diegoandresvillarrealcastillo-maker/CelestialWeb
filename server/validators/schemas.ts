@@ -9,20 +9,9 @@ const password = z.string()
   .regex(/[0-9]/, 'Incluye un número.')
   .regex(/[^\p{L}\p{N}\s]/u, 'Incluye un símbolo.');
 
-export const registerSchema = z.object({
-  email,
-  password,
-  fullName: z.string().trim().min(2).max(120),
-  phone: z.string().trim().min(7).max(30).regex(/^[+0-9 ()-]+$/).optional(),
-  hpVerify: z.string().max(0).optional(),
-  turnstileToken: z.string().max(2000).optional(),
-}).strict();
-
 export const loginSchema = z.object({ email, password: z.string().min(1).max(128) }).strict();
-export const googleAuthSchema = z.object({ idToken: z.string().min(20).max(4000) }).strict();
 export const forgotPasswordSchema = z.object({ email, hpVerify: z.string().max(0).optional() }).strict();
 export const resetPasswordSchema = z.object({ token: z.string().min(32).max(200), password }).strict();
-export const verifyEmailSchema = z.object({ token: z.string().min(32).max(200) }).strict();
 export const changePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }).strict();
 export const profileSchema = z.object({
   fullName: z.string().trim().min(2).max(120).optional(),
@@ -43,6 +32,7 @@ export const productQuerySchema = z.object({
 
 export const orderSchema = z.object({
   guestEmail: email.optional(),
+  privacyAccepted: z.literal(true),
   items: z.array(z.object({
     productId: z.string().min(3).max(80).regex(/^[a-zA-Z0-9-]+$/),
     quantity: z.number().int().min(1).max(99),
@@ -62,7 +52,7 @@ export const adminProductSchema = z.object({
   slug: z.string().trim().min(2).max(140).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
   name: z.string().trim().min(2).max(160).optional(),
   description: z.string().trim().min(10).max(3000).optional(),
-  priceCop: z.number().int().min(0).max(100_000_000).optional(),
+  priceCop: z.number().int().min(1).max(100_000_000).optional(),
   priceMaxCop: z.number().int().min(0).max(100_000_000).nullable().optional(),
   priceLabel: z.string().trim().max(120).nullable().optional(),
   imagePath: z.string().trim().max(500)
@@ -73,6 +63,8 @@ export const adminProductSchema = z.object({
   colors: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
   fragrances: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
   options: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  optionPrices: z.record(z.string().trim().min(1).max(100), z.number().int().min(0).max(100_000_000)).optional(),
+  requiresConsultation: z.boolean().optional(),
   features: z.array(z.string().trim().min(1).max(160)).max(30).optional(),
   availability: z.string().trim().min(2).max(60).optional(),
   collection: z.enum(['general', 'navidad']).optional(),
@@ -84,6 +76,14 @@ export const adminProductSchema = z.object({
 
 export const adminOrderUpdateSchema = z.object({
   status: z.enum(['pending', 'confirmed', 'preparing', 'shipped', 'completed', 'cancelled']),
+}).strict();
+
+export const adminShippingSchema = z.object({
+  shippingCop: z.number().int().min(0).max(100_000_000),
+}).strict();
+
+export const adminOrderNotificationQuerySchema = z.object({
+  after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
 }).strict();
 
 export const adminPaymentDecisionSchema = z.object({
@@ -114,5 +114,5 @@ export const adminPromotionSchema = z.object({
   configuration: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).refine((value) => Object.keys(value).length <= 20),
   startsAt: z.string().datetime().nullable().optional(),
   endsAt: z.string().datetime().nullable().optional(),
-  active: z.boolean().default(false),
+  active: z.literal(false).default(false),
 }).strict();

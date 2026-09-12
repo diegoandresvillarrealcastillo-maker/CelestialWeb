@@ -2,12 +2,14 @@ import { Pool, type PoolClient } from 'pg';
 import type { AppEnv } from '../config/env.js';
 import type { AuthContext } from '../types.js';
 
-export function createPool(env: AppEnv) {
+export function createPool(env: AppEnv, timeouts: { statement?: number; query?: number } = {}) {
   return new Pool({
     connectionString: env.DATABASE_URL,
     max: 12,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    statement_timeout: timeouts.statement ?? 5_000,
+    query_timeout: timeouts.query ?? 5_000,
     ssl: env.DATABASE_SSL
       ? { rejectUnauthorized: true, ...(env.DATABASE_CA_CERT ? { ca: env.DATABASE_CA_CERT } : {}) }
       : undefined,

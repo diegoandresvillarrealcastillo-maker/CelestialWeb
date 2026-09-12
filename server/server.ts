@@ -2,9 +2,11 @@ import { createServer } from 'node:http';
 import { createApp, createServices } from './app.js';
 import { loadEnv } from './config/env.js';
 import { createPool } from './database/pool.js';
+import { assertProductionDatabaseSecurity } from './database/production-checks.js';
 
 const env = loadEnv();
 const pool = createPool(env);
+await assertProductionDatabaseSecurity(pool, env);
 const server = createServer(createApp(env, createServices(pool, env)));
 
 server.listen(env.PORT, () => {

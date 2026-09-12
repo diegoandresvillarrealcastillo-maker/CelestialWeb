@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
 import { CartView } from '@/components/cart-view';
 
-export const metadata: Metadata = { title: 'Tu bolsa', description: 'Revisa tu selección y crea tu pedido Celestial.' };
+export const metadata: Metadata = { title: 'Tu bolsa', description: 'Revisa tu selección y crea tu pedido Celestial.', robots: { index: false, follow: false } };
 export default function CartPage() { return <main className="subpage"><CartView /></main>; }

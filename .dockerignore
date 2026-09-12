@@ -10,4 +10,5 @@ dist-api
 coverage
 tmp
 uploads
+Claude outputs
 npm-debug.log*

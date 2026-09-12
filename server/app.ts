@@ -16,10 +16,12 @@ import { paymentSettingsRoutes } from './routes/payment-settings.js';
 import { productRoutes } from './routes/products.js';
 import { PostgresAdminService } from './services/admin-service.js';
 import { PostgresAuthService } from './services/auth-service.js';
+import { PostgresDatabaseHealthService } from './services/database-health-service.js';
 import type { Services } from './services/contracts.js';
 import { WebhookEmailSender } from './services/email.js';
 import { PostgresOrderService } from './services/order-service.js';
 import { PostgresProductService } from './services/product-service.js';
+import { hashToken, safeTokenMatch } from './security/tokens.js';
 
 export function createServices(pool: Pool, env: AppEnv): Services {
   return {
@@ -27,6 +29,7 @@ export function createServices(pool: Pool, env: AppEnv): Services {
     products: new PostgresProductService(pool),
     orders: new PostgresOrderService(pool, env),
     admin: new PostgresAdminService(pool, env),
+    health: new PostgresDatabaseHealthService(pool),
   };
 }
 
@@ -72,8 +75,8 @@ export function createApp(env: AppEnv, services: Services) {
   });
   app.use(cors({
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key', 'X-Order-Token'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'Idempotency-Key', 'X-Order-Token'],
     origin(origin, callback) {
       if (!origin || env.allowedOrigins.includes(origin)) return callback(null, true);
       callback(null, false);
@@ -87,6 +90,20 @@ export function createApp(env: AppEnv, services: Services) {
   app.use(loadSession(services.auth, env));
 
   app.get('/health', (_request, response) => response.json({ status: 'ok' }));
+  app.get('/health/database', async (request, response) => {
+    const authorization = request.get('authorization') ?? '';
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (!env.HEALTHCHECK_SECRET || !token || !safeTokenMatch(token, hashToken(env.HEALTHCHECK_SECRET))) {
+      return response.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No autorizado.' } });
+    }
+    try {
+      await services.health.checkDatabase();
+      return response.json({ status: 'ok', database: 'reachable' });
+    } catch (error) {
+      request.log?.error({ err: error }, 'database health check failed');
+      return response.status(503).json({ status: 'error', database: 'unreachable' });
+    }
+  });
   app.use('/api/auth', authRoutes(services.auth, env));
   app.use('/api/products', productRoutes(services.products));
   app.use('/api/orders', orderRoutes(services.orders));

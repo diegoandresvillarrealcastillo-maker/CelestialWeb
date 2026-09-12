@@ -7,6 +7,7 @@ import { useCart } from './cart-provider';
 
 export function ProductCard({ product, index = 0 }: { product: CatalogProduct; index?: number }) {
   const { addItem } = useCart();
+  const requiresSelection = Boolean(product.colors?.length || product.fragrances?.length || product.options?.length);
   return (
     <article className="product-card">
       <Link className="product-image" href={`/producto/${product.slug}`}>
@@ -20,7 +21,9 @@ export function ProductCard({ product, index = 0 }: { product: CatalogProduct; i
         <h3><Link href={`/producto/${product.slug}`}>{product.name}</Link></h3>
         <div>
           <span>{product.priceLabel ?? formatCop(product.priceCop)}</span>
-          <button onClick={() => addItem({ id: product.id, slug: product.slug, name: product.name, image: product.image, priceCop: product.priceCop })} aria-label={`Agregar ${product.name} a la bolsa`}>+</button>
+          {requiresSelection
+            ? <Link className="product-card-action" href={`/producto/${product.slug}`} aria-label={`Elegir opciones para ${product.name}`}>+</Link>
+            : <button type="button" onClick={() => addItem({ id: product.id, slug: product.slug, name: product.name, image: product.image, priceCop: product.priceCop })} aria-label={`Agregar ${product.name} a la bolsa`}>+</button>}
         </div>
       </div>
     </article>

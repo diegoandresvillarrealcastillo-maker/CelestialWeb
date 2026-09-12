@@ -7,23 +7,21 @@ import { hashToken } from '../server/security/tokens.js';
 import type { AuthContext } from '../server/types.js';
 import type { Services } from '../server/services/contracts.js';
 
-const customer: AuthContext = { userId: '11111111-1111-4111-8111-111111111111', sessionId: 's1', sessionHash: hashToken('customer-token'), csrfHash: hashToken('csrf-good'), email: 'cliente@example.com', roles: ['customer'], fullName: 'Cliente', emailVerified: true };
+const customer: AuthContext = { userId: '11111111-1111-4111-8111-111111111111', sessionId: 's1', sessionHash: hashToken('customer-token'), csrfHash: hashToken('csrf-good'), email: 'cliente@example.com', roles: ['customer'], fullName: 'Cliente', phone: null, emailVerified: true };
 const other: AuthContext = { ...customer, userId: '22222222-2222-4222-8222-222222222222', sessionId: 's2', email: 'otro@example.com' };
 const admin: AuthContext = { ...customer, userId: '33333333-3333-4333-8333-333333333333', sessionId: 's3', roles: ['admin'], email: 'admin@example.com' };
-const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), allowedOrigins: ['http://localhost:3000'], REQUIRE_EMAIL_VERIFICATION: false };
+const env: AppEnv = { NODE_ENV: 'test', PORT: 4000, DATABASE_URL: 'postgres://unused', DATABASE_SSL: false, WEB_ORIGIN: 'http://localhost:3000', PUBLIC_API_URL: 'http://localhost:4000', TRUST_PROXY: false, SESSION_COOKIE_NAME: 'celestial_session', SESSION_TTL_HOURS: 24, IP_HASH_SECRET: 'x'.repeat(32), ORDER_TOKEN_SECRET: 'o'.repeat(32), allowedOrigins: ['http://localhost:3000'], WHATSAPP_NUMBER: '573205279249', HEALTHCHECK_SECRET: 'h'.repeat(32), EXPECTED_ADMIN_COUNT: 2 };
 
 function services(): Services {
   return {
     auth: {
       getSession: vi.fn(async (token) => token === 'customer-token' ? customer : token === 'other-token' ? other : token === 'admin-token' ? admin : null),
-      register: vi.fn(async () => undefined),
       login: vi.fn(async ({ email, password }) => {
-        if (email !== 'cliente@example.com' || password !== 'Valid-password-123!') throw new HttpError(401, 'Credenciales inválidas.', 'INVALID_CREDENTIALS');
-        return { token: 'new-session-token', csrfToken: 'csrf-new', user: customer };
+        if (email !== 'admin@example.com' || password !== 'Valid-password-123!') throw new HttpError(401, 'Credenciales inválidas.', 'INVALID_CREDENTIALS');
+        return { token: 'new-session-token', csrfToken: 'csrf-new', user: admin };
       }),
-      loginWithGoogle: vi.fn(async () => ({ token: 'google-session-token', csrfToken: 'csrf-google', user: customer })),
       logout: vi.fn(async () => undefined), rotateCsrf: vi.fn(async () => 'csrf-rotated'),
-      forgotPassword: vi.fn(async () => undefined), resetPassword: vi.fn(async () => undefined), verifyEmail: vi.fn(async () => undefined),
+      forgotPassword: vi.fn(async () => undefined), resetPassword: vi.fn(async () => undefined),
       updateProfile: vi.fn(async (auth) => auth), changePassword: vi.fn(async () => undefined),
     },
     products: { list: vi.fn(async () => []), getBySlug: vi.fn(async () => null) },
@@ -31,17 +29,20 @@ function services(): Services {
       create: vi.fn(async (_auth, input) => ({ orderNumber: '1001', totalCop: (input as { serverTotal?: number }).serverTotal ?? 40000 })),
       list: vi.fn(async () => []),
       get: vi.fn(async (auth, id) => auth.userId === customer.userId && id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' ? { id } : null),
+      getGuest: vi.fn(async () => null),
       attachReceipt: vi.fn(async () => ({ id: 'order-1', paymentStatus: 'pending_verification' })),
     },
     admin: {
       getOverview: vi.fn(async () => ({ activeProducts: 22 })), listOrders: vi.fn(async () => []),
-      updateOrder: vi.fn(async () => ({})), listProducts: vi.fn(async () => []), updateProduct: vi.fn(async () => ({})), createProduct: vi.fn(async () => ({})), deactivateProduct: vi.fn(async () => undefined),
+      getOrderNotifications: vi.fn(async () => []),
+      updateOrder: vi.fn(async () => ({})), confirmShipping: vi.fn(async () => ({})), listProducts: vi.fn(async () => []), updateProduct: vi.fn(async () => ({})), createProduct: vi.fn(async () => ({})), deactivateProduct: vi.fn(async () => undefined),
       uploadProductImage: vi.fn(async () => 'https://example.supabase.co/storage/v1/object/public/product-images/test.webp'),
       decidePayment: vi.fn(async () => ({ id: 'order-1', paymentStatus: 'verified' })),
       getPaymentSettings: vi.fn(async () => null), updatePaymentSettings: vi.fn(async () => ({})),
       listCategories: vi.fn(async () => []), createCategory: vi.fn(async () => ({})), updateCategory: vi.fn(async () => ({})),
       listPromotions: vi.fn(async () => []), createPromotion: vi.fn(async () => ({})), updatePromotion: vi.fn(async () => ({})),
     },
+    health: { checkDatabase: vi.fn(async () => undefined) },
   };
 }
 
@@ -50,11 +51,25 @@ describe('API security boundaries', () => {
   beforeEach(() => { fake = services(); });
 
   it('sets an opaque HttpOnly SameSite session cookie after login', async () => {
-    const response = await request(createApp(env, fake)).post('/api/auth/login').send({ email: 'cliente@example.com', password: 'Valid-password-123!' });
+    const response = await request(createApp(env, fake)).post('/api/auth/login').send({ email: 'admin@example.com', password: 'Valid-password-123!' });
     expect(response.status).toBe(200);
     expect(response.headers['set-cookie'][0]).toContain('HttpOnly');
     expect(response.headers['set-cookie'][0]).toContain('SameSite=Lax');
     expect(response.body.csrfToken).toBe('csrf-new');
+  });
+
+  it('does not expose client registration or Google sign-in endpoints', async () => {
+    const app = createApp(env, fake);
+    expect((await request(app).post('/api/auth/register').send({})).status).toBe(404);
+    expect((await request(app).post('/api/auth/google').send({})).status).toBe(404);
+  });
+
+  it('protects the database health check with a server-only secret', async () => {
+    const app = createApp(env, fake);
+    expect((await request(app).get('/health/database')).status).toBe(401);
+    const response = await request(app).get('/health/database').set('Authorization', `Bearer ${env.HEALTHCHECK_SECRET}`);
+    expect(response.status).toBe(200);
+    expect(fake.health.checkDatabase).toHaveBeenCalledOnce();
   });
 
   it('uses a generic login error', async () => {
@@ -67,6 +82,25 @@ describe('API security boundaries', () => {
     const response = await request(createApp(env, fake)).post('/api/auth/logout').set('Cookie', 'celestial_session=customer-token');
     expect(response.status).toBe(403);
     expect(fake.auth.logout).not.toHaveBeenCalled();
+  });
+
+  it('issues CSRF tokens only through an origin-checked POST', async () => {
+    const app = createApp(env, fake);
+    expect((await request(app).get('/api/auth/csrf').set('Cookie', 'celestial_session=admin-token')).status).toBe(404);
+    const response = await request(app).post('/api/auth/csrf')
+      .set('Origin', 'http://localhost:3000')
+      .set('Cookie', 'celestial_session=admin-token');
+    expect(response.status).toBe(200);
+    expect(response.body.csrfToken).toBe('csrf-rotated');
+  });
+
+  it('allows CORS preflight for the PUT operations used by the admin panel', async () => {
+    const response = await request(createApp(env, fake)).options('/api/admin/payment-settings')
+      .set('Origin', 'http://localhost:3000')
+      .set('Access-Control-Request-Method', 'PUT')
+      .set('Access-Control-Request-Headers', 'content-type,x-csrf-token');
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-methods']).toContain('PUT');
   });
 
   it('denies a customer access to administrative endpoints', async () => {
@@ -84,10 +118,32 @@ describe('API security boundaries', () => {
     expect(response.status).toBe(404);
   });
 
+  it('does not reveal whether a guest order exists without its secret token', async () => {
+    const app = createApp(env, fake);
+    const orderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    expect((await request(app).get(`/api/orders/${orderId}/guest`)).status).toBe(404);
+    expect(fake.orders.getGuest).not.toHaveBeenCalled();
+
+    vi.mocked(fake.orders.getGuest).mockResolvedValueOnce({ id: orderId, paymentStatus: 'pending' });
+    const response = await request(app).get(`/api/orders/${orderId}/guest`).set('X-Order-Token', 'g'.repeat(32));
+    expect(response.status).toBe(200);
+    expect(fake.orders.getGuest).toHaveBeenCalledWith(orderId, 'g'.repeat(32));
+  });
+
   it('rejects totals and prices supplied by the browser', async () => {
     const response = await request(createApp(env, fake)).post('/api/orders')
       .set('Cookie', 'celestial_session=customer-token').set('X-CSRF-Token', 'csrf-good')
-      .send({ items: [{ productId: 'aromatica-300', quantity: 1, selectedOptions: {} }], shippingAddress: { fullName: 'Cliente Uno', phone: '3001234567', address: 'Calle 1 # 2-3', city: 'Bogotá' }, total: 1, price: 1 });
+      .send({ privacyAccepted: true, items: [{ productId: 'aromatica-300', quantity: 1, selectedOptions: {} }], shippingAddress: { fullName: 'Cliente Uno', phone: '3001234567', address: 'Calle 1 # 2-3', city: 'Bogotá' }, total: 1, price: 1 });
+    expect(response.status).toBe(422);
+    expect(fake.orders.create).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit privacy authorization for guest checkout', async () => {
+    const response = await request(createApp(env, fake)).post('/api/orders').send({
+      guestEmail: 'cliente@example.com',
+      items: [{ productId: 'aromatica-300', quantity: 1, selectedOptions: {} }],
+      shippingAddress: { fullName: 'Cliente Uno', phone: '3001234567', address: 'Calle 1 # 2-3', city: 'Bogotá' },
+    });
     expect(response.status).toBe(422);
     expect(fake.orders.create).not.toHaveBeenCalled();
   });
@@ -97,6 +153,23 @@ describe('API security boundaries', () => {
       .set('Cookie', 'celestial_session=admin-token').set('X-CSRF-Token', 'csrf-good').send({ priceCop: 10000, role: 'admin' });
     expect(response.status).toBe(422);
     expect(fake.admin.updateProduct).not.toHaveBeenCalled();
+  });
+
+  it('requires both the admin role and CSRF to confirm shipping', async () => {
+    const app = createApp(env, fake);
+    const path = '/api/admin/orders/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/shipping';
+    expect((await request(app).patch(path).set('Cookie', 'celestial_session=customer-token').set('X-CSRF-Token', 'csrf-good').send({ shippingCop: 12000 })).status).toBe(403);
+    expect((await request(app).patch(path).set('Cookie', 'celestial_session=admin-token').send({ shippingCop: 12000 })).status).toBe(403);
+    expect((await request(app).patch(path).set('Cookie', 'celestial_session=admin-token').set('X-CSRF-Token', 'csrf-good').send({ shippingCop: 12000 })).status).toBe(200);
+    expect(fake.admin.confirmShipping).toHaveBeenCalledOnce();
+  });
+
+  it('rejects activation of an unapplied promotion', async () => {
+    const response = await request(createApp(env, fake)).post('/api/admin/promotions')
+      .set('Cookie', 'celestial_session=admin-token').set('X-CSRF-Token', 'csrf-good')
+      .send({ name: 'Descuento inseguro', kind: 'percentage', configuration: { value: 20 }, active: true });
+    expect(response.status).toBe(422);
+    expect(fake.admin.createPromotion).not.toHaveBeenCalled();
   });
 });
 
